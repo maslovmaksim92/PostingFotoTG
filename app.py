@@ -2,6 +2,7 @@ import os
 import datetime
 import traceback
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
@@ -32,6 +33,9 @@ BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD").strip()
 # Код поля в сделке для файлов
 CUSTOM_FILE_FIELD = "UF_CRM_1740994275251"
 
+# Количество потоков
+MAX_WORKERS = 4
+
 @app.route("/", methods=["GET"])
 def index():
     return "Flask app is running. Use POST /upload_photos", 200
@@ -49,11 +53,7 @@ def upload_file_to_bitrix(file_content, file_name="photo.jpg"):
         data = resp.json()
         logging.debug(f"Ответ disk.storage.uploadfile: {data}")
 
-        if "result" in data and "ID" in data["result"]:
-            return data["result"]["ID"]
-        else:
-            logging.error(f"Ошибка загрузки файла в Bitrix24: {data}")
-            return None
+        return data.get("result", {}).get("ID")
     except Exception as e:
         logging.exception(f"Исключение в upload_file_to_bitrix: {e}")
         return None
@@ -74,6 +74,17 @@ def attach_files_to_deal(deal_id, file_ids):
         logging.exception(f"Исключение в attach_files_to_deal: {e}")
         return False
 
+def download_file(full_url):
+    try:
+        r = requests.get(full_url, auth=HTTPBasicAuth(BASIC_AUTH_LOGIN, BASIC_AUTH_PASSWORD))
+        if r.status_code == 200:
+            return r.content
+        logging.error(f"Ошибка скачивания: {full_url}, статус {r.status_code}")
+        return None
+    except Exception as ex:
+        logging.exception(f"Ошибка скачивания файла {full_url}: {ex}")
+        return None
+
 @app.route("/upload_photos", methods=["POST"])
 def upload_photos():
     data = request.get_json()
@@ -82,7 +93,6 @@ def upload_photos():
     logging.info(f"Запрос: folder_id={folder_id}, deal_id={deal_id}")
 
     if not folder_id or not deal_id:
-        logging.error("Не указан folder_id или deal_id")
         return jsonify({"status": "error", "message": "folder_id или deal_id отсутствуют"}), 400
 
     try:
@@ -101,22 +111,20 @@ def upload_photos():
     bot = Bot(TELEGRAM_BOT_TOKEN)
     media_list, file_contents = [], []
 
-    for idx, file_info in enumerate(files_info, start=1):
-        full_url = f"https://vas-dom.bitrix24.ru{file_info.get('DOWNLOAD_URL')}"
-        logging.debug(f"Скачиваем файл: {full_url}")
-        try:
-            r = requests.get(full_url, auth=HTTPBasicAuth(BASIC_AUTH_LOGIN, BASIC_AUTH_PASSWORD))
-            if r.status_code == 200:
-                media_list.append(InputMediaPhoto(media=r.content))
-                file_contents.append(r.content)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_file = {
+            executor.submit(download_file, f"https://vas-dom.bitrix24.ru{f.get('DOWNLOAD_URL')}"): idx
+            for idx, f in enumerate(files_info, start=1)
+        }
+        for future in as_completed(future_to_file):
+            idx = future_to_file[future]
+            content = future.result()
+            if content:
+                media_list.append(InputMediaPhoto(media=content))
+                file_contents.append(content)
                 logging.info(f"Файл {idx} скачан успешно.")
-            else:
-                logging.error(f"Ошибка скачивания: статус {r.status_code}")
-        except Exception as ex:
-            logging.exception(f"Ошибка скачивания файла: {ex}")
 
     if not media_list:
-        logging.error("Ни один файл не скачался")
         return jsonify({"status": "error", "message": "Не удалось скачать файлы"}), 400
 
     media_list[0].caption = f"Фото из папки {folder_id} ({datetime.datetime.now():%d.%m %H:%M})"
@@ -132,12 +140,15 @@ def upload_photos():
         return jsonify({"status": "error", "message": "Ошибка Telegram"}), 500
 
     file_ids_for_deal = []
-    for idx, content in enumerate(file_contents, start=1):
-        file_id = upload_file_to_bitrix(content, file_name=f"photo_{idx}.jpg")
-        if file_id:
-            file_ids_for_deal.append(file_id)
-        else:
-            logging.error(f"Файл {idx} не загружен в Bitrix24.")
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {
+            executor.submit(upload_file_to_bitrix, content, f"photo_{idx}.jpg"): idx
+            for idx, content in enumerate(file_contents, start=1)
+        }
+        for future in as_completed(futures):
+            file_id = future.result()
+            if file_id:
+                file_ids_for_deal.append(file_id)
 
     attach_success = attach_files_to_deal(deal_id, file_ids_for_deal)
     logging.info(f"Прикрепление файлов к сделке: {'успешно' if attach_success else 'ошибка'}")
