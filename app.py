@@ -13,9 +13,15 @@ app = Flask(__name__)
 BITRIX_WEBHOOK_URL = "https://vas-dom.bitrix24.ru/rest/1/gq2ixv9nypiimwi9/"
 BASIC_AUTH = HTTPBasicAuth("maslovmaksim92@yandex.ru", "123456")
 FILE_FIELD_ID = "UF_CRM_1740994275251"
-SECRET_KEY = os.getenv('SECRET_KEY', 'default-secret-key')
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'docx'}
+
+# Отключена проверка секретного ключа по вашему требованию
+# SECRET_KEY = os.getenv('SECRET_KEY', 'default-secret-key')
+
+# Убрано ограничение на размер файла (по вашему требованию)
+# MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+# Разрешены все типы файлов (по вашему требованию)
+ALLOWED_EXTENSIONS = None  # Принимаем любые файлы
 
 # ========== НАСТРОЙКА ЛОГИРОВАНИЯ ==========
 def setup_logging():
@@ -29,7 +35,9 @@ def setup_logging():
             logging.StreamHandler()
         ]
     )
+    # Уменьшаем логирование для requests
     logging.getLogger('requests').setLevel(logging.WARNING)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -52,39 +60,32 @@ class BitrixAPI:
             
             BitrixAPI.log_api_call("GET", url, params)
             
+            start_time = datetime.now()
             response = requests.get(
                 url,
                 params=params,
                 auth=BASIC_AUTH,
-                timeout=15
+                timeout=30  # Увеличен таймаут
             )
+            response_time = (datetime.now() - start_time).total_seconds()
+            
             response.raise_for_status()
             
-            logger.info(f"Успешно получены файлы из папки {folder_id}")
-            return response.json().get('result', []), None
+            files = response.json().get('result', [])
+            logger.info(f"Получено {len(files)} файлов из папки {folder_id} за {response_time:.2f} сек")
+            return files, None
             
         except requests.exceptions.RequestException as e:
             error_msg = f"Ошибка получения файлов: {str(e)}"
             logger.error(error_msg)
+            logger.debug(f"Response: {e.response.text if hasattr(e, 'response') else 'No response'}")
             logger.debug(traceback.format_exc())
             return [], error_msg
 
     @staticmethod
     def upload_file(file_name: str, file_content: bytes) -> Tuple[Optional[str], Optional[str]]:
-        """Безопасная загрузка файла с валидацией"""
+        """Загрузка файла в Bitrix24 без ограничений"""
         try:
-            # Проверка расширения файла
-            if not BitrixAPI.is_file_allowed(file_name):
-                error = f"Недопустимый тип файла: {file_name}"
-                logger.warning(error)
-                return None, error
-
-            # Проверка размера файла
-            if len(file_content) > MAX_FILE_SIZE:
-                error = f"Файл слишком большой: {len(file_content)} байт"
-                logger.warning(error)
-                return None, error
-
             url = f"{BITRIX_WEBHOOK_URL}disk.storage.uploadfile"
             files = {
                 'id': (None, '3'),
@@ -93,27 +94,34 @@ class BitrixAPI:
             
             BitrixAPI.log_api_call("POST", url)
             
+            start_time = datetime.now()
             response = requests.post(
                 url,
                 files=files,
                 auth=BASIC_AUTH,
-                timeout=30
+                timeout=60  # Большой таймаут для больших файлов
             )
+            response_time = (datetime.now() - start_time).total_seconds()
+            
             response.raise_for_status()
             
             file_id = response.json().get('result', {}).get('ID')
-            logger.info(f"Файл {file_name} успешно загружен (ID: {file_id})")
+            file_size = len(file_content) / (1024 * 1024)  # Размер в MB
+            logger.info(
+                f"Файл {file_name} ({file_size:.2f} MB) загружен за {response_time:.2f} сек. ID: {file_id}"
+            )
             return file_id, None
             
         except Exception as e:
-            error_msg = f"Ошибка загрузки файла: {str(e)}"
+            error_msg = f"Ошибка загрузки файла {file_name}: {str(e)}"
             logger.error(error_msg)
+            logger.debug(f"Response: {e.response.text if hasattr(e, 'response') else 'No response'}")
             logger.debug(traceback.format_exc())
             return None, error_msg
 
     @staticmethod
     def attach_files_to_deal(deal_id: str, file_ids: List[str]) -> Tuple[bool, Optional[str]]:
-        """Прикрепление файлов к сделке с обработкой ошибок"""
+        """Прикрепление файлов к сделке"""
         try:
             url = f"{BITRIX_WEBHOOK_URL}crm.deal.update"
             payload = {
@@ -127,33 +135,24 @@ class BitrixAPI:
                 url,
                 json=payload,
                 auth=BASIC_AUTH,
-                timeout=15
+                timeout=30
             )
             response.raise_for_status()
             
-            logger.info(f"Файлы успешно прикреплены к сделке {deal_id}")
+            logger.info(f"Успешно прикреплено {len(file_ids)} файлов к сделке {deal_id}")
             return True, None
             
         except Exception as e:
             error_msg = f"Ошибка прикрепления файлов: {str(e)}"
             logger.error(error_msg)
+            logger.debug(f"Response: {e.response.text if hasattr(e, 'response') else 'No response'}")
             logger.debug(traceback.format_exc())
             return False, error_msg
 
-    @staticmethod
-    def is_file_allowed(filename: str) -> bool:
-        """Проверка расширения файла"""
-        return '.' in filename and \
-               filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 # ========== ОСНОВНЫЕ ФУНКЦИИ ==========
 def validate_request(request) -> Tuple[Optional[dict], Optional[str]]:
-    """Полная валидация входящего запроса"""
+    """Валидация входящего запроса (без проверки секретного ключа)"""
     try:
-        # Проверка секретного ключа
-        if request.headers.get('X-Secret-Key') != SECRET_KEY:
-            return None, "Неверный секретный ключ"
-
         data = request.get_json()
         if not data:
             return None, "Отсутствует тело запроса"
@@ -176,7 +175,7 @@ def validate_request(request) -> Tuple[Optional[dict], Optional[str]]:
         return None, "Ошибка обработки запроса"
 
 def process_file(file_info: Dict) -> Tuple[Optional[str], Optional[str]]:
-    """Обработка одного файла"""
+    """Обработка одного файла любого типа и размера"""
     try:
         file_url = file_info.get('DOWNLOAD_URL')
         file_name = file_info.get('NAME')
@@ -186,8 +185,8 @@ def process_file(file_info: Dict) -> Tuple[Optional[str], Optional[str]]:
 
         logger.info(f"Начало обработки файла: {file_name}")
 
-        # Скачивание файла
-        response = requests.get(file_url, auth=BASIC_AUTH, timeout=30)
+        # Скачивание файла с большим таймаутом
+        response = requests.get(file_url, auth=BASIC_AUTH, timeout=60)
         response.raise_for_status()
         
         # Загрузка в Bitrix
@@ -198,7 +197,7 @@ def process_file(file_info: Dict) -> Tuple[Optional[str], Optional[str]]:
         return file_id, None
 
     except Exception as e:
-        error_msg = f"Ошибка обработки файла: {str(e)}"
+        error_msg = f"Ошибка обработки файла {file_name}: {str(e)}"
         logger.error(error_msg)
         logger.debug(traceback.format_exc())
         return None, error_msg
@@ -207,11 +206,11 @@ def process_file(file_info: Dict) -> Tuple[Optional[str], Optional[str]]:
 @app.route("/webhook/disk", methods=["POST"])
 def handle_disk_webhook():
     """Основной обработчик вебхука"""
-    logger.info("="*50)
-    logger.info(f"Новый запрос | {datetime.now().isoformat()}")
-    logger.info("="*50)
+    logger.info("="*80)
+    logger.info(f"Начало обработки запроса | {datetime.now().isoformat()}")
+    logger.info("="*80)
 
-    # Валидация запроса
+    # Валидация запроса (без проверки секретного ключа)
     data, error = validate_request(request)
     if error:
         logger.error(f"Ошибка валидации: {error}")
@@ -220,7 +219,7 @@ def handle_disk_webhook():
     folder_id = str(data['folder_id'])
     deal_id = str(data['deal_id'])
     
-    logger.info(f"Обработка сделки {deal_id}, папка {folder_id}")
+    logger.info(f"Обработка: сделка {deal_id}, папка {folder_id}")
 
     # Получаем список файлов
     files, error = BitrixAPI.get_folder_files(folder_id)
@@ -268,10 +267,14 @@ def handle_disk_webhook():
             "failed": len(failed_files)
         },
         "processed_files": successful_files,
-        "failed_files": failed_files
+        "failed_files": failed_files,
+        "timestamp": datetime.now().isoformat()
     }
 
-    logger.info(f"Итоговый результат: {result}")
+    logger.info("="*80)
+    logger.info(f"Итоговый результат:\n{json.dumps(result, indent=2, ensure_ascii=False)}")
+    logger.info("="*80)
+    
     return jsonify(result)
 
 # ========== ЗАПУСК ==========
@@ -279,6 +282,6 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=10000,
-        debug=True,
+        debug=False,  # В продакшне должно быть False
         threaded=True
     )
