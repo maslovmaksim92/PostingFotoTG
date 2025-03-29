@@ -34,7 +34,7 @@ CUSTOM_FILE_FIELD = "UF_CRM_1740994275251"
 
 def upload_file_to_bitrix(file_content, file_name="photo.jpg"):
     try:
-        storage_id = <твой storage_id>  # <-- Замени на реальный storage_id
+        storage_id = 3  # <-- Замени на реальный storage_id
         upload_url = f"{BITRIX_WEBHOOK_URL}disk.storage.uploadfile"
         files_data = {
             "id": (None, str(storage_id)),
