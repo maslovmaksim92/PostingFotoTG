@@ -6,43 +6,49 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import urlparse
 
+# Загружаем переменные окружения
 load_dotenv()
 
+# Настройка логирования
 logging.basicConfig(
-    filename="app.log",
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
+    filename="logs/app.log",
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
     encoding="utf-8"
 )
 
 app = Flask(__name__)
 
-# === Конфигурация ===
+# Переменные окружения
 BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL", "").strip()
 BITRIX_DEAL_UPDATE_URL = os.getenv("BITRIX_DEAL_UPDATE_URL", "").strip()
 BASIC_AUTH_LOGIN = os.getenv("BASIC_AUTH_LOGIN", "").strip()
 BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD", "").strip()
 
-CUSTOM_FILE_FIELD = "UF_CRM_1740994275251"  # Множественное поле для файлов
+# Кастомное поле для файлов
+CUSTOM_FILE_FIELD = "UF_CRM_1740994275251"
 
 @app.route("/", methods=["GET"])
 def index():
     return "Сервис работает ✅", 200
 
+
 def download_file(url):
+    logging.info("📥 Пытаюсь скачать файл: %s", url)
     try:
-        logging.info(f"📥 Загружаю файл: {url}")
         r = requests.get(url, auth=HTTPBasicAuth(BASIC_AUTH_LOGIN, BASIC_AUTH_PASSWORD))
         if r.status_code == 200:
             return r.content
         else:
-            logging.error(f"❌ Ошибка загрузки файла ({url}): статус {r.status_code}")
+            logging.error("❌ Ошибка при скачивании файла (%s): код %s", url, r.status_code)
             return None
     except Exception as ex:
-        logging.exception(f"❌ Исключение при загрузке файла: {ex}")
+        logging.exception("🔥 Исключение при скачивании файла: %s", ex)
         return None
 
+
 def upload_file_to_bitrix(file_content, file_name, storage_id=3):
+    logging.info("⬆️ Загружаю файл в Bitrix24: %s", file_name)
     try:
         upload_url = f"{BITRIX_WEBHOOK_URL}disk.storage.uploadfile"
         files_data = {
@@ -51,18 +57,20 @@ def upload_file_to_bitrix(file_content, file_name, storage_id=3):
         }
         resp = requests.post(upload_url, files=files_data)
         data = resp.json()
-        logging.info(f"📤 Ответ от disk.storage.uploadfile: {data}")
+        logging.debug("📦 Ответ Bitrix disk.storage.uploadfile: %s", data)
 
         if "result" in data and "ID" in data["result"]:
             return data["result"]["ID"]
         else:
-            logging.error(f"❌ Ошибка загрузки в Битрикс24: {data}")
+            logging.error("❌ Не удалось загрузить файл в Bitrix: %s", data)
             return None
     except Exception as e:
-        logging.exception(f"❌ Ошибка при загрузке в Bitrix: {e}")
+        logging.exception("🔥 Исключение при загрузке файла в Bitrix: %s", e)
         return None
 
+
 def attach_files_to_deal(deal_id, file_ids):
+    logging.info("📎 Прикрепляю файлы к сделке %s", deal_id)
     try:
         payload = {
             "id": deal_id,
@@ -70,44 +78,45 @@ def attach_files_to_deal(deal_id, file_ids):
         }
         resp = requests.post(BITRIX_DEAL_UPDATE_URL, json=payload)
         data = resp.json()
-        logging.info(f"🔗 Ответ от crm.deal.update: {data}")
+        logging.debug("📬 Ответ Bitrix crm.deal.update: %s", data)
         return data.get("result", False)
     except Exception as e:
-        logging.exception("❌ Исключение при обновлении сделки")
+        logging.exception("🔥 Исключение при прикреплении файлов к сделке: %s", e)
         return False
+
 
 @app.route("/attach_files", methods=["POST"])
 def attach_files():
-    if request.content_type != "application/json":
-        logging.error("❌ Content-Type не application/json")
-        return jsonify({"status": "error", "message": "Content-Type должен быть application/json"}), 400
+    data = request.get_json(silent=True)
 
-    try:
-        data = request.get_json(force=True)
-    except Exception as e:
-        logging.error(f"❌ Ошибка чтения JSON: {str(e)}")
-        return jsonify({"status": "error", "message": "Невалидный JSON"}), 400
+    if data is None:
+        logging.error("❌ Формат запроса не JSON: %s", request.data.decode("utf-8"))
+        return jsonify({"status": "error", "message": "Формат запроса не JSON"}), 400
 
-    folder_id = str(data.get("folder_id", "")).strip()
-    deal_id = str(data.get("deal_id", "")).strip()
+    folder_id = data.get("folder_id")
+    deal_id = data.get("deal_id")
 
-    logging.info(f"📨 Получены параметры: folder_id={folder_id}, deal_id={deal_id}")
+    logging.info(f"🔍 Получен запрос: folder_id={folder_id}, deal_id={deal_id}")
 
     if not folder_id or not deal_id:
         logging.error("❌ Не указаны folder_id или deal_id")
-        return jsonify({"status": "error", "message": "folder_id и deal_id обязательны"}), 400
+        return jsonify({"status": "error", "message": "Не указаны folder_id или deal_id"}), 400
 
+    # Получаем список файлов из папки
     try:
-        resp = requests.post(f"{BITRIX_WEBHOOK_URL}disk.folder.getchildren", json={"id": folder_id})
-        resp.raise_for_status()
-        files_info = [f for f in resp.json().get("result", []) if f.get("TYPE") == 2]
-        logging.info(f"📂 Файлов в папке {folder_id}: {len(files_info)}")
+        resp = requests.post(
+            f"{BITRIX_WEBHOOK_URL}disk.folder.getchildren",
+            json={"id": folder_id}
+        )
+        result_json = resp.json()
+        files_info = [f for f in result_json.get("result", []) if f.get("TYPE") == 2]
+        logging.info(f"📂 В папке {folder_id} найдено файлов: {len(files_info)}")
     except Exception as e:
-        logging.exception("❌ Ошибка при получении списка файлов")
-        return jsonify({"status": "error", "message": "Ошибка получения файлов из папки"}), 500
+        logging.exception("🔥 Ошибка при получении списка файлов из папки:")
+        return jsonify({"status": "error", "message": "Ошибка получения списка файлов"}), 500
 
     if not files_info:
-        logging.warning(f"⚠️ Папка {folder_id} пуста")
+        logging.error("📁 Папка пуста")
         return jsonify({"status": "error", "message": "Папка пуста"}), 404
 
     file_ids_for_deal = []
@@ -115,34 +124,33 @@ def attach_files():
     for file_info in files_info:
         file_url = f"https://vas-dom.bitrix24.ru{file_info.get('DOWNLOAD_URL')}"
         file_name = os.path.basename(urlparse(file_url).path)
-        content = download_file(file_url)
+        file_content = download_file(file_url)
 
-        if content:
-            file_id = upload_file_to_bitrix(content, file_name)
+        if file_content:
+            file_id = upload_file_to_bitrix(file_content, file_name)
             if file_id:
                 file_ids_for_deal.append(file_id)
-                logging.info(f"✅ Файл '{file_name}' успешно прикреплён к сделке (ID {file_id})")
+                logging.info(f"✅ Файл '{file_name}' успешно загружен (ID={file_id})")
             else:
-                logging.error(f"❌ Не удалось прикрепить файл: {file_name}")
+                logging.error(f"❌ Ошибка загрузки файла '{file_name}' в Bitrix")
         else:
-            logging.error(f"❌ Не удалось скачать файл: {file_name}")
+            logging.error(f"❌ Не удалось скачать файл '{file_name}'")
 
     if not file_ids_for_deal:
-        return jsonify({"status": "error", "message": "Файлы не загружены"}), 500
+        logging.error("❌ Ни один файл не был прикреплён к сделке")
+        return jsonify({"status": "error", "message": "Не удалось прикрепить файлы"}), 500
 
-    result = attach_files_to_deal(deal_id, file_ids_for_deal)
-    if not result:
-        logging.error("❌ Ошибка при прикреплении файлов к сделке")
-        return jsonify({"status": "error", "message": "Файлы не прикреплены к сделке"}), 500
+    attach_success = attach_files_to_deal(deal_id, file_ids_for_deal)
+    logging.info("📌 Результат прикрепления к сделке %s: %s", deal_id, "успех" if attach_success else "ошибка")
 
     return jsonify({
-        "status": "ok",
+        "status": "ok" if attach_success else "error",
         "folder_id": folder_id,
         "deal_id": deal_id,
         "files_attached": len(file_ids_for_deal),
-        "attach_success": True
-    }), 200
+        "attach_success": attach_success
+    }), 200 if attach_success else 500
 
-# ❗ Не запускаем через app.run — используем gunicorn
+
 if __name__ == "__main__":
-    print("⚠️ Используй Gunicorn для запуска: gunicorn -w 1 app:app")
+    app.run(host="0.0.0.0", port=10000, debug=False)
