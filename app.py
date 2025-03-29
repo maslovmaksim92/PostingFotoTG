@@ -6,26 +6,31 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import urlparse
 
-# Загружаем переменные окружения
-load_dotenv()
+# ✅ Создание папки для логов, если её нет
+LOG_DIR = "logs"
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)
 
-# Настройка логирования
-logging.basicConfig(
-    filename="logs/app.log",
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    encoding="utf-8"
-)
+# ✅ Настройка логгирования в файл и консоль
+log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+file_handler = logging.FileHandler(os.path.join(LOG_DIR, "app.log"), encoding="utf-8")
+file_handler.setFormatter(log_formatter)
 
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(log_formatter)
+
+logging.basicConfig(level=logging.DEBUG, handlers=[file_handler, console_handler])
+
+# ✅ Flask-приложение
 app = Flask(__name__)
 
-# Переменные окружения
+# ✅ Загрузка переменных окружения
+load_dotenv()
+
 BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL", "").strip()
 BITRIX_DEAL_UPDATE_URL = os.getenv("BITRIX_DEAL_UPDATE_URL", "").strip()
 BASIC_AUTH_LOGIN = os.getenv("BASIC_AUTH_LOGIN", "").strip()
 BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD", "").strip()
-
-# Кастомное поле для файлов
 CUSTOM_FILE_FIELD = "UF_CRM_1740994275251"
 
 @app.route("/", methods=["GET"])
@@ -110,6 +115,7 @@ def attach_files():
         )
         result_json = resp.json()
         files_info = [f for f in result_json.get("result", []) if f.get("TYPE") == 2]
+
         logging.info(f"📂 В папке {folder_id} найдено файлов: {len(files_info)}")
     except Exception as e:
         logging.exception("🔥 Ошибка при получении списка файлов из папки:")
@@ -122,7 +128,13 @@ def attach_files():
     file_ids_for_deal = []
 
     for file_info in files_info:
-        file_url = f"https://vas-dom.bitrix24.ru{file_info.get('DOWNLOAD_URL')}"
+        download_url = file_info.get("DOWNLOAD_URL")
+
+        if not download_url:
+            logging.error(f"❌ У файла отсутствует DOWNLOAD_URL: {file_info}")
+            continue
+
+        file_url = f"https://vas-dom.bitrix24.ru{download_url}"
         file_name = os.path.basename(urlparse(file_url).path)
         file_content = download_file(file_url)
 
