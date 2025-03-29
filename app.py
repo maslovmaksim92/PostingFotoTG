@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import urlparse
+import hashlib
 
 # Настройка логов
 LOG_DIR = "logs"
@@ -23,126 +24,225 @@ app = Flask(__name__)
 load_dotenv()
 
 # Конфигурация
-BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL", "").strip()
-BASIC_AUTH_LOGIN = os.getenv("BASIC_AUTH_LOGIN", "").strip()
-BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD", "").strip()
-FILE_FIELD_ID = os.getenv("FILE_FIELD_ID", "UF_CRM_1740994275251")
-FOLDER_FIELD_ID = os.getenv("FOLDER_FIELD_ID", "UF_CRM_1743235503935")
+BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL")
+BASIC_AUTH_LOGIN = os.getenv("BASIC_AUTH_LOGIN")
+BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD")
+FILE_FIELD_ID = "UF_CRM_1740994275251"  # Поле для файлов в сделке
+FOLDER_FIELD_ID = "UF_CRM_1743235503935"  # Поле с ссылкой на папку
 STAGE_TO_TRACK = "УБОРКА СЕГОДНЯ"
 
-# OAuth
-BITRIX_CLIENT_ID = os.getenv("BITRIX_CLIENT_ID").replace("local.", "local:")  # Исправление формата
-BITRIX_CLIENT_SECRET = os.getenv("BITRIX_CLIENT_SECRET")
-BITRIX_REDIRECT_URI = os.getenv("BITRIX_REDIRECT_URI")
-
-# Глобальная переменная для токена (временное решение)
-ACCESS_TOKEN = None
+# 🔒 Безопасность
+def validate_request(data):
+    """Проверка подлинности запроса от Bitrix24"""
+    if not data.get("auth"):
+        logging.warning("Запрос без авторизационных данных")
+        return False
+    return True
 
 @app.route("/", methods=["GET"])
 def index():
     return "Сервис обработки файлов для Bitrix24", 200
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    """Обработчик вебхука от Bitrix24"""
+@app.route("/webhook/stage", methods=["POST"])
+def stage_webhook():
+    """Обработчик для БП при смене стадии"""
     try:
         data = request.get_json()
-        if not data:
-            return jsonify({"error": "Empty request"}), 400
-
-        event = data.get("event")
-        deal_id = data.get("data[FIELDS][ID]")
-        deal_stage = data.get("data[FIELDS][STAGE_ID]")
-
-        if event != "ONCRMDEALUPDATE" or not deal_id:
-            return jsonify({"status": "ignored"}), 200
-
-        if deal_stage.upper() == STAGE_TO_TRACK.upper():
-            process_deal_files(deal_id)
         
-        return jsonify({"status": "processed"}), 200
+        if not validate_request(data):
+            return jsonify({"error": "Unauthorized"}), 401
 
-    except Exception as e:
-        logging.exception("Ошибка в обработчике вебхука")
-        return jsonify({"error": str(e)}), 500
+        deal_id = data.get("data[FIELDS][ID]")
+        if not deal_id:
+            return jsonify({"error": "Deal ID missing"}), 400
 
-@app.route("/oauth/callback")
-def oauth_callback():
-    global ACCESS_TOKEN
-    auth_code = request.args.get("code")
-    if not auth_code:
-        return jsonify({"error": "Authorization code missing"}), 400
-
-    try:
-        token_url = "https://oauth.bitrix.info/oauth/token/"
-        payload = {
-            "grant_type": "authorization_code",
-            "client_id": BITRIX_CLIENT_ID,
-            "client_secret": BITRIX_CLIENT_SECRET,
-            "code": auth_code,
-            "redirect_uri": BITRIX_REDIRECT_URI
-        }
-        response = requests.post(token_url, data=payload, timeout=10)
-        if response.status_code != 200:
-            logging.error(f"Ошибка получения токена: {response.text}")
-            return jsonify({"error": "Token exchange failed"}), 400
-
-        token_data = response.json()
-        ACCESS_TOKEN = token_data.get("access_token")
-        logging.info("✅ Успешная авторизация")
-        return jsonify({"status": "success", "access_token": ACCESS_TOKEN})
-
-    except Exception as e:
-        logging.exception("Ошибка в OAuth callback")
-        return jsonify({"error": str(e)}), 500
-
-def process_deal_files(deal_id):
-    """Основная логика обработки файлов"""
-    try:
+        # 1. Получаем данные сделки
         deal_data = get_deal_data(deal_id)
         if not deal_data:
-            return False
-
-        folder_id = deal_data.get(FOLDER_FIELD_ID)
-        if not folder_id:
-            logging.error(f"Для сделки {deal_id} не указана папка")
-            return False
-
-        files = get_files_from_folder(folder_id)
-        if not files:
-            logging.info(f"В папке {folder_id} нет файлов")
-            return False
-
-        attached_files = []
-        for file_info in files:
-            file_id = process_single_file(file_info)
-            if file_id:
-                attached_files.append(file_id)
-
-        if attached_files:
-            return update_deal_files(deal_id, attached_files)
+            return jsonify({"error": "Deal not found"}), 404
         
-        return False
+        # 2. Создаем папку (если не создана)
+        folder_name = f"Уборка {deal_id} - {deal_data.get('TITLE', '')}"[:100]
+        folder_id = create_folder(folder_name)
+        
+        if not folder_id:
+            return jsonify({"error": "Failed to create folder"}), 500
+
+        # 3. Обновляем поле с папкой в сделке
+        if not update_deal_field(deal_id, FOLDER_FIELD_ID, folder_id):
+            return jsonify({"error": "Failed to update deal"}), 500
+
+        return jsonify({
+            "status": "success",
+            "deal_id": deal_id,
+            "folder_id": folder_id
+        })
 
     except Exception as e:
-        logging.exception(f"Ошибка обработки файлов сделки {deal_id}")
-        return False
+        logging.exception("Stage Webhook Error")
+        return jsonify({"error": str(e)}), 500
 
-def get_folder_id_by_path(path: str):
-    """Получение folder_id по пути через OAuth"""
+@app.route("/webhook/disk", methods=["POST"])
+def disk_webhook():
+    """Обработчик для БП при изменении в Диске"""
+    try:
+        data = request.get_json()
+        
+        if not validate_request(data):
+            return jsonify({"error": "Unauthorized"}), 401
+
+        folder_id = data.get("folder_id")
+        deal_id = data.get("deal_id")
+        
+        if not folder_id or not deal_id:
+            return jsonify({"error": "Missing parameters"}), 400
+        
+        # Обрабатываем файлы в папке
+        result = process_deal_files(deal_id, folder_id)
+        
+        if not result:
+            return jsonify({"error": "File processing failed"}), 500
+
+        return jsonify({
+            "status": "success",
+            "deal_id": deal_id,
+            "files_processed": len(result["attached_files"])
+        })
+
+    except Exception as e:
+        logging.exception("Disk Webhook Error")
+        return jsonify({"error": str(e)}), 500
+
+# 🛠️ Вспомогательные функции
+def create_folder(folder_name):
+    """Создает папку на Диске"""
     try:
         response = requests.post(
-            f"{BITRIX_WEBHOOK_URL}disk.folder.getbypath",
-            headers={"Authorization": f"Bearer {ACCESS_TOKEN}"},
-            json={"path": path},
+            f"{BITRIX_WEBHOOK_URL}disk.folder.add",
+            json={
+                "NAME": folder_name,
+                "PARENT_ID": 0  # Корневая папка
+            },
             timeout=10
         )
         return response.json().get("result", {}).get("ID")
     except Exception as e:
-        logging.error(f"Ошибка получения folder_id: {e}")
+        logging.error(f"Folder Creation Error: {e}")
         return None
 
-# Остальные функции (get_deal_data, get_files_from_folder, download_file и т.д.) остаются без изменений
+def process_deal_files(deal_id, folder_id):
+    """Обработка файлов в папке"""
+    try:
+        files = get_files_from_folder(folder_id)
+        if not files:
+            return {"status": False, "message": "No files found"}
+
+        attached_files = []
+        for file_info in [f for f in files.get("result", []) if f.get("TYPE") == 2]:
+            file_id = process_single_file(file_info)
+            if file_id:
+                attached_files.append(file_id)
+
+        if not attached_files:
+            return {"status": False, "message": "No files processed"}
+
+        update_success = update_deal_field(deal_id, FILE_FIELD_ID, attached_files)
+        
+        return {
+            "status": update_success,
+            "attached_files": attached_files
+        }
+
+    except Exception as e:
+        logging.error(f"File Processing Error: {e}")
+        return {"status": False, "error": str(e)}
+
+def get_files_from_folder(folder_id):
+    """Получает список файлов из папки"""
+    try:
+        response = requests.post(
+            f"{BITRIX_WEBHOOK_URL}disk.folder.getchildren",
+            json={"id": folder_id},
+            timeout=10
+        )
+        return response.json()
+    except Exception as e:
+        logging.error(f"Get Files Error: {e}")
+        return None
+
+def process_single_file(file_info):
+    """Обрабатывает один файл"""
+    try:
+        download_url = file_info.get("DOWNLOAD_URL")
+        if not download_url:
+            return None
+
+        domain = urlparse(BITRIX_WEBHOOK_URL).netloc
+        file_url = f"https://{domain}{download_url}"
+        file_name = os.path.basename(urlparse(file_url).path)
+        
+        # Генерируем уникальное имя файла
+        file_hash = hashlib.md5(file_name.encode()).hexdigest()[:8]
+        unique_name = f"{file_hash}_{file_name}"
+        
+        file_content = download_file(file_url)
+        if not file_content:
+            return None
+
+        response = requests.post(
+            f"{BITRIX_WEBHOOK_URL}disk.storage.uploadfile",
+            files={
+                "id": (None, "3"),  # ID хранилища
+                "fileContent": (unique_name, file_content)
+            },
+            timeout=30
+        )
+        return response.json().get("result", {}).get("ID")
+    except Exception as e:
+        logging.error(f"File Processing Error: {e}")
+        return None
+
+def download_file(url):
+    """Скачивает файл с базовой авторизацией"""
+    try:
+        response = requests.get(
+            url,
+            auth=HTTPBasicAuth(BASIC_AUTH_LOGIN, BASIC_AUTH_PASSWORD),
+            timeout=30
+        )
+        return response.content if response.status_code == 200 else None
+    except Exception as e:
+        logging.error(f"Download Error: {e}")
+        return None
+
+def update_deal_field(deal_id, field_code, value):
+    """Обновляет поле сделки"""
+    try:
+        response = requests.post(
+            f"{BITRIX_WEBHOOK_URL}crm.deal.update",
+            json={
+                "id": deal_id,
+                "fields": {field_code: value}
+            },
+            timeout=10
+        )
+        return response.json().get("result", False)
+    except Exception as e:
+        logging.error(f"Update Deal Error: {e}")
+        return False
+
+def get_deal_data(deal_id):
+    """Получает данные сделки"""
+    try:
+        response = requests.post(
+            f"{BITRIX_WEBHOOK_URL}crm.deal.get",
+            json={"id": deal_id},
+            timeout=10
+        )
+        return response.json().get("result", {})
+    except Exception as e:
+        logging.error(f"Get Deal Error: {e}")
+        return None
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000, debug=False)
