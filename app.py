@@ -32,6 +32,10 @@ BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD").strip()
 # Код поля в сделке для файлов
 CUSTOM_FILE_FIELD = "UF_CRM_1740994275251"
 
+@app.route("/", methods=["GET"])
+def index():
+    return "Flask app is running. Use POST /upload_photos", 200
+
 def upload_file_to_bitrix(file_content, file_name="photo.jpg"):
     try:
         storage_id = 3  # <-- Замени на реальный storage_id
@@ -81,10 +85,11 @@ def upload_photos():
         logging.error("Не указан folder_id или deal_id")
         return jsonify({"status": "error", "message": "folder_id или deal_id отсутствуют"}), 400
 
-    # Получаем файлы из Bitrix24
     try:
         resp = requests.post(f"{BITRIX_WEBHOOK_URL}disk.folder.getchildren", json={"id": folder_id})
-        files_info = [f for f in resp.json().get("result", []) if f.get("TYPE") == 2]
+        full_response = resp.json()
+        logging.debug(f"Ответ disk.folder.getchildren: {full_response}")
+        files_info = [f for f in full_response.get("result", []) if f.get("TYPE") == 2]
         logging.info(f"Файлов найдено: {len(files_info)}")
     except Exception as e:
         logging.exception(f"Ошибка получения файлов из папки {folder_id}: {e}")
@@ -114,7 +119,6 @@ def upload_photos():
         logging.error("Ни один файл не скачался")
         return jsonify({"status": "error", "message": "Не удалось скачать файлы"}), 400
 
-    # Отправка файлов в Telegram
     media_list[0].caption = f"Фото из папки {folder_id} ({datetime.datetime.now():%d.%m %H:%M})"
     chunk_size, total_sent = 10, 0
 
@@ -127,7 +131,6 @@ def upload_photos():
         logging.exception(f"Ошибка отправки в Telegram: {e}")
         return jsonify({"status": "error", "message": "Ошибка Telegram"}), 500
 
-    # Загружаем файлы в Bitrix24 и прикрепляем к сделке
     file_ids_for_deal = []
     for idx, content in enumerate(file_contents, start=1):
         file_id = upload_file_to_bitrix(content, file_name=f"photo_{idx}.jpg")
@@ -136,7 +139,6 @@ def upload_photos():
         else:
             logging.error(f"Файл {idx} не загружен в Bitrix24.")
 
-    # Обновляем сделку
     attach_success = attach_files_to_deal(deal_id, file_ids_for_deal)
     logging.info(f"Прикрепление файлов к сделке: {'успешно' if attach_success else 'ошибка'}")
 
