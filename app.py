@@ -6,6 +6,7 @@ import requests
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 import traceback
+import json
 
 app = Flask(__name__)
 
@@ -13,15 +14,6 @@ app = Flask(__name__)
 BITRIX_WEBHOOK_URL = "https://vas-dom.bitrix24.ru/rest/1/gq2ixv9nypiimwi9/"
 BASIC_AUTH = HTTPBasicAuth("maslovmaksim92@yandex.ru", "123456")
 FILE_FIELD_ID = "UF_CRM_1740994275251"
-
-# Отключена проверка секретного ключа по вашему требованию
-# SECRET_KEY = os.getenv('SECRET_KEY', 'default-secret-key')
-
-# Убрано ограничение на размер файла (по вашему требованию)
-# MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-
-# Разрешены все типы файлов (по вашему требованию)
-ALLOWED_EXTENSIONS = None  # Принимаем любые файлы
 
 # ========== НАСТРОЙКА ЛОГИРОВАНИЯ ==========
 def setup_logging():
@@ -35,14 +27,11 @@ def setup_logging():
             logging.StreamHandler()
         ]
     )
-    # Уменьшаем логирование для requests
     logging.getLogger('requests').setLevel(logging.WARNING)
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
 
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# ========== ВСПОМОГАТЕЛЬНЫЕ КЛАССЫ ==========
 class BitrixAPI:
     @staticmethod
     def log_api_call(method: str, url: str, params: dict = None):
@@ -53,38 +42,36 @@ class BitrixAPI:
 
     @staticmethod
     def get_folder_files(folder_id: str) -> Tuple[List[Dict], Optional[str]]:
-        """Получение списка файлов из папки с обработкой ошибок"""
+        """Получение списка файлов из папки"""
         try:
             url = f"{BITRIX_WEBHOOK_URL}disk.folder.getchildren"
             params = {'id': folder_id}
             
             BitrixAPI.log_api_call("GET", url, params)
             
-            start_time = datetime.now()
             response = requests.get(
                 url,
                 params=params,
                 auth=BASIC_AUTH,
-                timeout=30  # Увеличен таймаут
+                timeout=30
             )
-            response_time = (datetime.now() - start_time).total_seconds()
-            
             response.raise_for_status()
             
             files = response.json().get('result', [])
-            logger.info(f"Получено {len(files)} файлов из папки {folder_id} за {response_time:.2f} сек")
+            logger.info(f"Успешно получено {len(files)} файлов из папки {folder_id}")
             return files, None
             
         except requests.exceptions.RequestException as e:
             error_msg = f"Ошибка получения файлов: {str(e)}"
-            logger.error(error_msg)
-            logger.debug(f"Response: {e.response.text if hasattr(e, 'response') else 'No response'}")
-            logger.debug(traceback.format_exc())
+            if hasattr(e, 'response'):
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response text: {e.response.text}")
+            logger.error(traceback.format_exc())
             return [], error_msg
 
     @staticmethod
     def upload_file(file_name: str, file_content: bytes) -> Tuple[Optional[str], Optional[str]]:
-        """Загрузка файла в Bitrix24 без ограничений"""
+        """Загрузка файла в Bitrix24"""
         try:
             url = f"{BITRIX_WEBHOOK_URL}disk.storage.uploadfile"
             files = {
@@ -94,29 +81,22 @@ class BitrixAPI:
             
             BitrixAPI.log_api_call("POST", url)
             
-            start_time = datetime.now()
             response = requests.post(
                 url,
                 files=files,
                 auth=BASIC_AUTH,
-                timeout=60  # Большой таймаут для больших файлов
+                timeout=60
             )
-            response_time = (datetime.now() - start_time).total_seconds()
-            
             response.raise_for_status()
             
             file_id = response.json().get('result', {}).get('ID')
-            file_size = len(file_content) / (1024 * 1024)  # Размер в MB
-            logger.info(
-                f"Файл {file_name} ({file_size:.2f} MB) загружен за {response_time:.2f} сек. ID: {file_id}"
-            )
+            logger.info(f"Файл {file_name} успешно загружен (ID: {file_id})")
             return file_id, None
             
         except Exception as e:
-            error_msg = f"Ошибка загрузки файла {file_name}: {str(e)}"
+            error_msg = f"Ошибка загрузки файла: {str(e)}"
             logger.error(error_msg)
-            logger.debug(f"Response: {e.response.text if hasattr(e, 'response') else 'No response'}")
-            logger.debug(traceback.format_exc())
+            logger.error(traceback.format_exc())
             return None, error_msg
 
     @staticmethod
@@ -145,23 +125,33 @@ class BitrixAPI:
         except Exception as e:
             error_msg = f"Ошибка прикрепления файлов: {str(e)}"
             logger.error(error_msg)
-            logger.debug(f"Response: {e.response.text if hasattr(e, 'response') else 'No response'}")
-            logger.debug(traceback.format_exc())
+            logger.error(traceback.format_exc())
             return False, error_msg
 
-# ========== ОСНОВНЫЕ ФУНКЦИИ ==========
-def validate_request(request) -> Tuple[Optional[dict], Optional[str]]:
-    """Валидация входящего запроса (без проверки секретного ключа)"""
+def validate_and_parse_request(request) -> Tuple[Optional[dict], Optional[str]]:
+    """Валидация и парсинг входящего запроса"""
     try:
-        data = request.get_json()
-        if not data:
-            return None, "Отсутствует тело запроса"
+        # Проверка наличия данных
+        if not request.data:
+            return None, "Пустое тело запроса"
 
-        # Валидация обязательных полей
+        # Попытка парсинга JSON
+        try:
+            data = json.loads(request.data.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            logger.error(f"Ошибка парсинга JSON: {str(e)}")
+            logger.debug(f"Полученные сырые данные: {request.data.decode('utf-8', errors='replace')}")
+            return None, f"Невалидный JSON: {str(e)}"
+
+        # Проверка структуры данных
+        if not isinstance(data, dict):
+            return None, "Ожидается JSON объект"
+
+        # Проверка обязательных полей
         required_fields = ['folder_id', 'deal_id']
-        for field in required_fields:
-            if field not in data:
-                return None, f"Отсутствует обязательное поле: {field}"
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            return None, f"Отсутствуют обязательные поля: {', '.join(missing_fields)}"
 
         # Проверка формата ID
         if not str(data['folder_id']).isdigit() or not str(data['deal_id']).isdigit():
@@ -171,50 +161,27 @@ def validate_request(request) -> Tuple[Optional[dict], Optional[str]]:
 
     except Exception as e:
         logger.error(f"Ошибка валидации запроса: {str(e)}")
-        logger.debug(traceback.format_exc())
+        logger.error(traceback.format_exc())
         return None, "Ошибка обработки запроса"
 
-def process_file(file_info: Dict) -> Tuple[Optional[str], Optional[str]]:
-    """Обработка одного файла любого типа и размера"""
-    try:
-        file_url = file_info.get('DOWNLOAD_URL')
-        file_name = file_info.get('NAME')
-        
-        if not file_url or not file_name:
-            return None, "Отсутствует URL или имя файла"
-
-        logger.info(f"Начало обработки файла: {file_name}")
-
-        # Скачивание файла с большим таймаутом
-        response = requests.get(file_url, auth=BASIC_AUTH, timeout=60)
-        response.raise_for_status()
-        
-        # Загрузка в Bitrix
-        file_id, error = BitrixAPI.upload_file(file_name, response.content)
-        if error:
-            return None, error
-            
-        return file_id, None
-
-    except Exception as e:
-        error_msg = f"Ошибка обработки файла {file_name}: {str(e)}"
-        logger.error(error_msg)
-        logger.debug(traceback.format_exc())
-        return None, error_msg
-
-# ========== ВЕБХУК ==========
 @app.route("/webhook/disk", methods=["POST"])
 def handle_disk_webhook():
     """Основной обработчик вебхука"""
     logger.info("="*80)
     logger.info(f"Начало обработки запроса | {datetime.now().isoformat()}")
-    logger.info("="*80)
+    logger.info("-"*80)
+    logger.debug(f"Headers: {dict(request.headers)}")
+    logger.debug(f"Raw data: {request.data.decode('utf-8', errors='replace')}")
 
-    # Валидация запроса (без проверки секретного ключа)
-    data, error = validate_request(request)
+    # Валидация запроса
+    data, error = validate_and_parse_request(request)
     if error:
         logger.error(f"Ошибка валидации: {error}")
-        return jsonify({"status": "error", "message": error}), 400
+        return jsonify({
+            "status": "error",
+            "message": error,
+            "timestamp": datetime.now().isoformat()
+        }), 400
 
     folder_id = str(data['folder_id'])
     deal_id = str(data['deal_id'])
@@ -224,11 +191,19 @@ def handle_disk_webhook():
     # Получаем список файлов
     files, error = BitrixAPI.get_folder_files(folder_id)
     if error:
-        return jsonify({"status": "error", "message": error}), 400
+        return jsonify({
+            "status": "error",
+            "message": error,
+            "timestamp": datetime.now().isoformat()
+        }), 400
 
     if not files:
         logger.info("Нет файлов для обработки")
-        return jsonify({"status": "success", "message": "No files found"})
+        return jsonify({
+            "status": "success",
+            "message": "No files found",
+            "timestamp": datetime.now().isoformat()
+        })
 
     # Обработка файлов
     successful_files = []
@@ -238,12 +213,17 @@ def handle_disk_webhook():
         if file_info.get('TYPE') != 'file':
             continue
 
-        file_id, error = process_file(file_info)
+        file_name = file_info.get('NAME')
+        file_url = file_info.get('DOWNLOAD_URL')
+        
+        logger.info(f"Обработка файла: {file_name}")
+
+        file_id, error = BitrixAPI.upload_file(file_name, requests.get(file_url, auth=BASIC_AUTH, timeout=60).content)
         if file_id:
             successful_files.append(file_id)
         else:
             failed_files.append({
-                "name": file_info.get('NAME'),
+                "file_name": file_name,
                 "error": error or "Unknown error"
             })
 
@@ -255,10 +235,11 @@ def handle_disk_webhook():
             return jsonify({
                 "status": "error",
                 "message": "File attachment failed",
-                "details": error
+                "details": error,
+                "timestamp": datetime.now().isoformat()
             }), 500
 
-    # Формирование отчета
+    # Формирование результата
     result = {
         "status": "success",
         "statistics": {
@@ -271,17 +252,36 @@ def handle_disk_webhook():
         "timestamp": datetime.now().isoformat()
     }
 
-    logger.info("="*80)
-    logger.info(f"Итоговый результат:\n{json.dumps(result, indent=2, ensure_ascii=False)}")
+    logger.info("-"*80)
+    logger.info("Результат обработки:")
+    logger.info(json.dumps(result, indent=2, ensure_ascii=False))
     logger.info("="*80)
     
     return jsonify(result)
 
-# ========== ЗАПУСК ==========
+@app.errorhandler(404)
+def not_found_error(error):
+    logger.error(f"404 Not Found: {request.url}")
+    return jsonify({
+        "status": "error",
+        "message": "Endpoint not found",
+        "timestamp": datetime.now().isoformat()
+    }), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    logger.error(f"500 Internal Server Error: {str(error)}")
+    logger.error(traceback.format_exc())
+    return jsonify({
+        "status": "error",
+        "message": "Internal server error",
+        "timestamp": datetime.now().isoformat()
+    }), 500
+
 if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=10000,
-        debug=False,  # В продакшне должно быть False
+        debug=False,
         threaded=True
     )
