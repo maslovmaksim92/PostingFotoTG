@@ -59,6 +59,7 @@ class BitrixAPI:
 
     @staticmethod
     def refresh_token(refresh_token):
+        logger.info("🔁 Обновляем access_token через refresh_token...")
         response = requests.post(
             "https://oauth.bitrix.info/oauth/token/",
             data={
@@ -70,7 +71,9 @@ class BitrixAPI:
             timeout=10
         )
         response.raise_for_status()
-        return response.json()
+        refreshed = response.json()
+        logger.info(f"✅ Новый access_token: {refreshed.get('access_token')}")
+        return refreshed
 
     @staticmethod
     def get_valid_token():
@@ -79,24 +82,26 @@ class BitrixAPI:
                 'SELECT access_token, refresh_token, expires_at FROM bitrix_tokens'
             ).fetchone()
 
-            if row and datetime.fromisoformat(row[2]) > datetime.now():
-                return {
-                    'access_token': row[0],
-                    'refresh_token': row[1],
-                    'expires_at': row[2]
-                }
-
             if row:
-                new_token = BitrixAPI.refresh_token(row[1])
-                expires_at = datetime.now() + timedelta(seconds=new_token['expires_in'] - 60)
-                
-                conn.execute('DELETE FROM bitrix_tokens')
-                conn.execute(
-                    'INSERT INTO bitrix_tokens VALUES (?, ?, ?)',
-                    (new_token['access_token'], new_token['refresh_token'], expires_at.isoformat())
-                )
-                return new_token
+                logger.info(f"🧾 Найден токен. expires_at = {row[2]}")
+                if datetime.fromisoformat(row[2]) > datetime.now():
+                    return {
+                        'access_token': row[0],
+                        'refresh_token': row[1],
+                        'expires_at': row[2]
+                    }
+                else:
+                    logger.warning("⚠️ Токен просрочен, обновляем...")
+                    new_token = BitrixAPI.refresh_token(row[1])
+                    expires_at = datetime.now() + timedelta(seconds=new_token['expires_in'] - 60)
+                    conn.execute('DELETE FROM bitrix_tokens')
+                    conn.execute(
+                        'INSERT INTO bitrix_tokens VALUES (?, ?, ?)',
+                        (new_token['access_token'], new_token['refresh_token'], expires_at.isoformat())
+                    )
+                    return new_token
 
+            logger.error("❌ Нет токенов в базе данных")
             raise ValueError("No tokens available in database")
 
     @staticmethod
@@ -125,17 +130,26 @@ def oauth_callback():
     if not code:
         return jsonify({"error": "Authorization code missing"}), 400
 
-    token_data = BitrixAPI.get_token(code)
-    expires_at = datetime.now() + timedelta(seconds=token_data['expires_in'] - 60)
+    try:
+        token_data = BitrixAPI.get_token(code)
+        expires_at = datetime.now() + timedelta(seconds=token_data['expires_in'] - 60)
 
-    with sqlite3.connect(DATABASE) as conn:
-        conn.execute('DELETE FROM bitrix_tokens')
-        conn.execute(
-            'INSERT INTO bitrix_tokens VALUES (?, ?, ?)',
-            (token_data['access_token'], token_data['refresh_token'], expires_at.isoformat())
-        )
+        with sqlite3.connect(DATABASE) as conn:
+            conn.execute('DELETE FROM bitrix_tokens')
+            conn.execute(
+                'INSERT INTO bitrix_tokens VALUES (?, ?, ?)',
+                (token_data['access_token'], token_data['refresh_token'], expires_at.isoformat())
+            )
 
-    return jsonify({"status": "Authorization successful"}), 200
+        logger.info("✅ Авторизация прошла успешно")
+        logger.info(f"🔐 Access token: {token_data['access_token']}")
+        logger.info(f"🔁 Refresh token: {token_data['refresh_token']}")
+        logger.info(f"⏳ Expires at: {expires_at.isoformat()}")
+
+        return jsonify({"status": "Authorization successful"}), 200
+    except Exception as e:
+        logger.exception("🔥 Ошибка при сохранении токена")
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/webhook/disk', methods=['POST'])
 def handle_disk_webhook():
@@ -153,6 +167,7 @@ def handle_disk_webhook():
     return jsonify({"status": "processing_started"}), 202
 
 def process_files(folder_id, deal_id, file_ids):
+    logger.info(f"📦 Обработка {len(file_ids)} файлов для сделки {deal_id}")
     files = []
     for file_id in file_ids:
         file_info = BitrixAPI.api_call('disk.file.get', {'id': file_id})
@@ -172,9 +187,9 @@ def process_files(folder_id, deal_id, file_ids):
         result = BitrixAPI.api_call('crm.deal.update', update_data)
 
         if result.get('result'):
-            logger.info(f"Updated deal {deal_id} successfully")
+            logger.info(f"✅ Сделка {deal_id} успешно обновлена")
         else:
-            logger.error(f"Update failed: {result.get('error', 'Unknown error')}")
+            logger.error(f"❌ Ошибка обновления сделки {deal_id}: {result.get('error', 'Unknown error')}")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)), threaded=True)
