@@ -134,56 +134,47 @@ def handle_disk_webhook():
     data = request.get_json()
     logger.info(f"📥 Входящий JSON: {json.dumps(data, ensure_ascii=False)}")
 
-    required_fields = ['folder_id', 'deal_id', 'file_ids']
+    required_fields = ['folder_id', 'deal_id']
     if not data or not all(field in data for field in required_fields):
         logger.error(f"❌ Отсутствуют обязательные поля: {data}")
         return jsonify({"error": "Missing required fields"}), 400
-
-    if not isinstance(data['file_ids'], list):
-        logger.error("⚠️ file_ids должен быть списком")
-        return jsonify({"error": "file_ids must be a list"}), 400
-
-    if not data['file_ids']:
-        logger.warning("⚠️ Получен пустой список file_ids")
-        return jsonify({"error": "No files to attach (file_ids is empty)"}), 400
 
     if not isinstance(data['folder_id'], str) or not data['folder_id']:
         logger.warning("⚠️ folder_id отсутствует или не строка")
         return jsonify({"error": "Invalid or missing folder_id"}), 400
 
-    threading.Thread(target=process_files, args=(data['folder_id'], data['deal_id'], data['file_ids']), daemon=True).start()
+    threading.Thread(target=process_files, args=(data['folder_id'], data['deal_id']), daemon=True).start()
     return jsonify({"status": "processing_started"}), 202
 
-def process_files(folder_id, deal_id, file_ids):
+def process_files(folder_id, deal_id):
     try:
-        logger.info(f"🚀 Начата обработка файлов для сделки {deal_id}, folder_id: {folder_id}, всего файлов: {len(file_ids)}")
+        logger.info(f"🚀 Запуск process_files для folder_id={folder_id}, deal_id={deal_id}")
+        # Получение всех файлов в папке
+        folder_content = BitrixAPI.api_call('disk.folder.getchildren', {'id': folder_id})
+        items = folder_content.get('result', [])
+        logger.info(f"📂 Найдено {len(items)} объектов в папке")
 
         files = []
-        for fid in file_ids:
-            try:
-                file_info = BitrixAPI.api_call('disk.file.get', {'id': fid})
-                if file_info.get('result'):
-                    files.append({'fileId': fid})
-                    logger.info(f"📄 Найден файл ID {fid}: {file_info['result'].get('NAME')}")
-                else:
-                    logger.warning(f"⚠️ Пустой результат для файла ID {fid}")
-            except Exception as e:
-                logger.error(f"❌ Ошибка получения данных по файлу {fid}: {e}")
+        for item in items:
+            if item.get('TYPE') == 'file':
+                file_id = item['ID']
+                files.append({'fileId': file_id})
+                logger.info(f"📎 Добавлен файл ID={file_id}, имя: {item.get('NAME')}")
 
         if not files:
-            logger.warning(f"⚠️ Нет валидных файлов для прикрепления к сделке {deal_id}")
+            logger.warning("⚠️ В папке нет файлов для прикрепления")
             return
 
         update_data = {'id': deal_id, 'fields': {FILE_FIELD_ID: files}}
         result = BitrixAPI.api_call('crm.deal.update', update_data)
 
         if result.get('result'):
-            logger.info(f"✅ Сделка {deal_id} успешно обновлена с {len(files)} файлами")
+            logger.info(f"✅ Файлы успешно прикреплены к сделке {deal_id}")
         else:
-            logger.error(f"❌ Ошибка обновления сделки {deal_id}: {result.get('error')} | Запрос: {update_data}")
+            logger.error(f"❌ Ошибка обновления сделки: {result.get('error')} | Запрос: {update_data}")
 
     except Exception as e:
-        logger.exception(f"🔥 Критическая ошибка при обработке файлов: {str(e)}")
+        logger.exception(f"🔥 Критическая ошибка в process_files: {str(e)}")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)), threaded=True, debug=True)
