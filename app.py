@@ -161,7 +161,6 @@ def handle_disk_webhook():
 
         logger.info(f"📁 Получен folder_id из сделки: {folder_id}")
 
-        # Получение файлов из папки
         folder_data = BitrixAPI.api_call('disk.folder.getchildren', {'id': folder_id})
         file_ids = [item['ID'] for item in folder_data.get('result', []) if item['TYPE'] == 'file']
 
@@ -209,4 +208,4 @@ def process_files(folder_id, deal_id, file_ids):
         logger.exception(f"🔥 Критическая ошибка при обработке файлов: {str(e)}")
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)), threaded=True, debug=True)
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)), threaded=True, debug=False)
