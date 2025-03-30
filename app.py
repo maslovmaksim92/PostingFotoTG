@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import logging
 import sqlite3
@@ -7,7 +8,8 @@ from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 import requests
-from urllib.parse import urlencode
+from telegram import Bot, Update
+from telegram.ext import Dispatcher
 
 load_dotenv()
 
@@ -17,18 +19,23 @@ app = Flask(__name__)
 BITRIX_CLIENT_ID = os.getenv('BITRIX_CLIENT_ID')
 BITRIX_CLIENT_SECRET = os.getenv('BITRIX_CLIENT_SECRET')
 BITRIX_REDIRECT_URI = os.getenv('BITRIX_REDIRECT_URI')
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 FILE_FIELD_ID = os.getenv('FILE_FIELD_ID')
 FOLDER_FIELD_ID = os.getenv('FOLDER_FIELD_ID')
 DATABASE = os.getenv('DATABASE_URL', 'sqlite:///app.db').replace('sqlite:///', '')
 
-# Logging
+# Logging setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Database initialization
+# Telegram bot initialization
+telegram_bot = Bot(token=TELEGRAM_BOT_TOKEN)
+dispatcher = Dispatcher(telegram_bot, None, use_context=True)
+
+# Database setup
 def init_db():
     with sqlite3.connect(DATABASE) as conn:
         conn.execute('''
@@ -172,31 +179,38 @@ def oauth_callback():
 @app.route('/webhook/disk', methods=['POST'])
 def handle_disk_webhook():
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "No JSON data received"}), 400
+        raw_data = request.get_data(as_text=True)
+        logger.info(f"Incoming webhook data: {raw_data}")
+
+        # Clean and parse JSON
+        clean_data = re.sub(r'//.*|/\*.*?\*/|\{=[^}]+\}', '', raw_data, flags=re.DOTALL)
+        data = json.loads(clean_data)
 
         required_fields = ['folder_id', 'deal_id', 'file_ids']
         if not all(field in data for field in required_fields):
             return jsonify({"error": "Missing required fields"}), 400
 
-        # Start background task with copied data
-        thread_data = {
-            'folder_id': data['folder_id'],
-            'deal_id': data['deal_id'],
-            'file_ids': data['file_ids']
-        }
-        threading.Thread(target=process_files, kwargs=thread_data).start()
+        threading.Thread(
+            target=process_files,
+            args=(data['folder_id'], data['deal_id'], data['file_ids'])
+        ).start()
 
-        return jsonify({"status": "Processing started"}), 202
+        return jsonify({
+            "status": "processing_started",
+            "deal_id": data['deal_id'],
+            "received_files": len(data['file_ids'])
+        }), 202
 
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON format")
+        return jsonify({"error": "Invalid JSON format"}), 400
     except Exception as e:
         logger.error(f"Webhook error: {str(e)}")
-        return jsonify({"error": "Invalid request"}), 400
+        return jsonify({"error": "Internal server error"}), 500
 
 def process_files(folder_id, deal_id, file_ids):
     try:
-        logger.info(f"Processing files for deal {deal_id}")
+        logger.info(f"Processing {len(file_ids)} files for deal {deal_id}")
         
         files = []
         for file_id in file_ids:
@@ -217,12 +231,22 @@ def process_files(folder_id, deal_id, file_ids):
             result = BitrixAPI.api_call('crm.deal.update', update_data)
             
             if result.get('result'):
-                logger.info(f"Successfully updated deal {deal_id} with {len(files)} files")
+                logger.info(f"Updated deal {deal_id} successfully")
             else:
-                logger.error(f"Failed to update deal {deal_id}: {result.get('error')}")
+                logger.error(f"Update failed: {result.get('error', 'Unknown error')}")
 
     except Exception as e:
         logger.error(f"File processing error: {str(e)}")
+
+@app.route('/telegram/webhook', methods=['POST'])
+def telegram_webhook():
+    try:
+        update = Update.de_json(request.get_json(force=True), telegram_bot)
+        dispatcher.process_update(update)
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        logger.error(f"Telegram webhook error: {str(e)}")
+        return jsonify({"error": "Invalid request"}), 400
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)), threaded=True)
