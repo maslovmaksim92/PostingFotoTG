@@ -106,7 +106,7 @@ class BitrixAPI:
     def api_call(cls, method, params=None):
         token = cls.get_valid_token()
         headers = {'Authorization': f'Bearer {token["access_token"]}', 'Content-Type': 'application/json'}
-        url = f"https://vas-dom.bitrix24.ru/rest/1/{method}"
+        url = f"https://vas-dom.bitrix24.ru/rest/{method}"
         logger.info(f"📡 API вызов: {url} | Параметры: {params}")
         response = requests.post(url, json=params, headers=headers)
         logger.info(f"📬 Ответ API: {response.status_code} | {response.text}")
