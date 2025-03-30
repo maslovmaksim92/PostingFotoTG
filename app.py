@@ -150,22 +150,31 @@ def oauth_callback():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/webhook/disk', methods=['POST'])
-@async_task
 def handle_disk_webhook():
     try:
+        # Получаем данные в основном потоке с контекстом
         raw_data = request.data.decode('utf-8')
         data = json.loads(re.sub(r'//.*|/\*.*?\*/|\{=[^}]+\}', '', raw_data, flags=re.DOTALL))
         
         if not all(key in data for key in ['folder_id', 'deal_id', 'file_ids']):
-            logger.error("Invalid webhook data structure")
-            return
+            return jsonify({"error": "Invalid request structure"}), 400
 
-        process_files(data['folder_id'], data['deal_id'], data['file_ids'])
+        # Передаем параметры в фоновую задачу
+        threading.Thread(
+            target=process_files,
+            args=(data['folder_id'], data['deal_id'], data['file_ids'])
+        ).start()
+
+        # Немедленно возвращаем ответ клиенту
+        return jsonify({"status": "processing started"}), 200
+
     except Exception as e:
-        logger.error(f"Webhook processing failed: {str(e)}")
+        logger.error(f"Webhook error: {str(e)}")
+        return jsonify({"error": "Invalid request"}), 400
 
 def process_files(folder_id, deal_id, file_ids):
     try:
+        # Логика обработки файлов
         files = []
         for file_id in file_ids:
             file_info = BitrixAPI.api_call('disk.file.get', {'id': file_id})
@@ -189,7 +198,7 @@ def process_files(folder_id, deal_id, file_ids):
             else:
                 logger.error(f"Failed to attach files to deal {deal_id}")
     except Exception as e:
-        logger.error(f"File processing error: {str(e)}")
+        logger.error(f"Background processing error: {str(e)}")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)), threaded=True)
