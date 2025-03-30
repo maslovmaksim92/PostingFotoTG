@@ -18,6 +18,7 @@ BITRIX_CLIENT_ID = os.getenv('BITRIX_CLIENT_ID')
 BITRIX_CLIENT_SECRET = os.getenv('BITRIX_CLIENT_SECRET')
 BITRIX_REDIRECT_URI = os.getenv('BITRIX_REDIRECT_URI')
 FILE_FIELD_ID = os.getenv('FILE_FIELD_ID')
+FOLDER_FIELD_ID = os.getenv('FOLDER_FIELD_ID')
 DATABASE = os.getenv('DATABASE_URL', 'sqlite:///app.db').replace('sqlite:///', '')
 
 # Настройка логирования
@@ -153,15 +154,17 @@ def handle_disk_webhook():
     try:
         deal_id = data['deal_id']
         deal = BitrixAPI.api_call('crm.deal.get', {'id': deal_id})
-        folder_id = deal['result'].get('UF_CRM_1743273170850')
+        folder_id = deal['result'].get(FOLDER_FIELD_ID)
 
         if not folder_id:
-            logger.error(f"❌ Не удалось получить folder_id из сделки {deal_id}")
+            logger.error(f"❌ Не удалось получить folder_id из поля {FOLDER_FIELD_ID} в сделке {deal_id}")
             return jsonify({"error": "folder_id not found in deal"}), 400
 
         logger.info(f"📁 Получен folder_id из сделки: {folder_id}")
 
         folder_data = BitrixAPI.api_call('disk.folder.getchildren', {'id': folder_id})
+        logger.info(f"📂 Ответ по содержимому папки: {json.dumps(folder_data, ensure_ascii=False)}")
+
         file_ids = [item['ID'] for item in folder_data.get('result', []) if item['TYPE'] == 'file']
 
         if not file_ids:
