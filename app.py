@@ -13,21 +13,25 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Configuration
+# Конфигурация
 BITRIX_CLIENT_ID = os.getenv('BITRIX_CLIENT_ID')
 BITRIX_CLIENT_SECRET = os.getenv('BITRIX_CLIENT_SECRET')
 BITRIX_REDIRECT_URI = os.getenv('BITRIX_REDIRECT_URI')
 FILE_FIELD_ID = os.getenv('FILE_FIELD_ID')
 DATABASE = os.getenv('DATABASE_URL', 'sqlite:///app.db').replace('sqlite:///', '')
 
-# Logging setup
+# Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler("app.log"),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 
-# Database setup
+# Инициализация БД
 def init_db():
     with sqlite3.connect(DATABASE) as conn:
         conn.execute('''
@@ -37,92 +41,71 @@ def init_db():
                 expires_at TIMESTAMP NOT NULL
             )
         ''')
+        conn.commit()
 
 init_db()
 
 class BitrixAPI:
-    @staticmethod
-    def get_token(code):
-        response = requests.post(
-            "https://oauth.bitrix.info/oauth/token/",
-            data={
-                'grant_type': 'authorization_code',
-                'client_id': BITRIX_CLIENT_ID,
-                'client_secret': BITRIX_CLIENT_SECRET,
-                'redirect_uri': BITRIX_REDIRECT_URI,
-                'code': code
-            },
-            timeout=10
-        )
-        response.raise_for_status()
-        return response.json()
 
     @staticmethod
-    def refresh_token(refresh_token):
-        logger.info("🔁 Обновляем access_token через refresh_token...")
-        response = requests.post(
-            "https://oauth.bitrix.info/oauth/token/",
-            data={
-                'grant_type': 'refresh_token',
-                'client_id': BITRIX_CLIENT_ID,
-                'client_secret': BITRIX_CLIENT_SECRET,
-                'refresh_token': refresh_token
-            },
-            timeout=10
-        )
-        response.raise_for_status()
-        refreshed = response.json()
-        logger.info(f"✅ Новый access_token: {refreshed.get('access_token')}")
-        return refreshed
+    def execute_request(url, data):
+        try:
+            response = requests.post(url, data=data, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Ошибка запроса: {str(e)}")
+            raise
 
-    @staticmethod
-    def get_valid_token():
+    @classmethod
+    def get_token(cls, code):
+        return cls.execute_request("https://oauth.bitrix.info/oauth/token/", {
+            'grant_type': 'authorization_code',
+            'client_id': BITRIX_CLIENT_ID,
+            'client_secret': BITRIX_CLIENT_SECRET,
+            'redirect_uri': BITRIX_REDIRECT_URI,
+            'code': code
+        })
+
+    @classmethod
+    def refresh_token(cls, refresh_token):
+        return cls.execute_request("https://oauth.bitrix.info/oauth/token/", {
+            'grant_type': 'refresh_token',
+            'client_id': BITRIX_CLIENT_ID,
+            'client_secret': BITRIX_CLIENT_SECRET,
+            'refresh_token': refresh_token
+        })
+
+    @classmethod
+    def get_valid_token(cls):
         with sqlite3.connect(DATABASE) as conn:
-            row = conn.execute(
-                'SELECT access_token, refresh_token, expires_at FROM bitrix_tokens'
-            ).fetchone()
+            row = conn.execute('SELECT access_token, refresh_token, expires_at FROM bitrix_tokens').fetchone()
+
+            if row and datetime.fromisoformat(row[2]) > datetime.now():
+                return {'access_token': row[0], 'refresh_token': row[1]}
 
             if row:
-                logger.info(f"🧾 Найден токен. expires_at = {row[2]}")
-                if datetime.fromisoformat(row[2]) > datetime.now():
-                    return {
-                        'access_token': row[0],
-                        'refresh_token': row[1],
-                        'expires_at': row[2]
-                    }
-                else:
-                    logger.warning("⚠️ Токен просрочен, обновляем...")
-                    new_token = BitrixAPI.refresh_token(row[1])
-                    expires_at = datetime.now() + timedelta(seconds=new_token['expires_in'] - 60)
-                    conn.execute('DELETE FROM bitrix_tokens')
-                    conn.execute(
-                        'INSERT INTO bitrix_tokens VALUES (?, ?, ?)',
-                        (new_token['access_token'], new_token['refresh_token'], expires_at.isoformat())
-                    )
-                    return new_token
+                new_token = cls.refresh_token(row[1])
+                expires_at = datetime.now() + timedelta(seconds=new_token['expires_in'] - 60)
+                conn.execute('DELETE FROM bitrix_tokens')
+                conn.execute('INSERT INTO bitrix_tokens VALUES (?, ?, ?)',
+                             (new_token['access_token'], new_token['refresh_token'], expires_at.isoformat()))
+                conn.commit()
+                return new_token
 
-            logger.error("❌ Нет токенов в базе данных")
-            raise ValueError("No tokens available in database")
+            raise ValueError("Отсутствуют токены в базе данных")
 
-    @staticmethod
-    def api_call(method, params=None):
-        token_data = BitrixAPI.get_valid_token()
-        headers = {
-            'Authorization': f'Bearer {token_data["access_token"]}',
-            'Content-Type': 'application/json'
-        }
-        response = requests.post(
-            f"https://vas-dom.bitrix24.ru/rest/1/{method}",
-            json=params,
-            headers=headers,
-            timeout=15
-        )
+    @classmethod
+    def api_call(cls, method, params=None):
+        token = cls.get_valid_token()
+        headers = {'Authorization': f'Bearer {token["access_token"]}', 'Content-Type': 'application/json'}
+        response = requests.post(f"https://vas-dom.bitrix24.ru/rest/1/{method}", json=params, headers=headers)
         response.raise_for_status()
         return response.json()
 
 @app.route('/')
-def index():
-    return "Service is running ✅", 200
+def health_check():
+    return jsonify({"status": "ok", "timestamp": datetime.now().isoformat()}), 200
 
 @app.route('/oauth/callback')
 def oauth_callback():
@@ -130,66 +113,39 @@ def oauth_callback():
     if not code:
         return jsonify({"error": "Authorization code missing"}), 400
 
-    try:
-        token_data = BitrixAPI.get_token(code)
-        expires_at = datetime.now() + timedelta(seconds=token_data['expires_in'] - 60)
+    token_data = BitrixAPI.get_token(code)
+    expires_at = datetime.now() + timedelta(seconds=token_data['expires_in'] - 60)
 
-        with sqlite3.connect(DATABASE) as conn:
-            conn.execute('DELETE FROM bitrix_tokens')
-            conn.execute(
-                'INSERT INTO bitrix_tokens VALUES (?, ?, ?)',
-                (token_data['access_token'], token_data['refresh_token'], expires_at.isoformat())
-            )
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute('DELETE FROM bitrix_tokens')
+        conn.execute('INSERT INTO bitrix_tokens VALUES (?, ?, ?)',
+                     (token_data['access_token'], token_data['refresh_token'], expires_at.isoformat()))
+        conn.commit()
 
-        logger.info("✅ Авторизация прошла успешно")
-        logger.info(f"🔐 Access token: {token_data['access_token']}")
-        logger.info(f"🔁 Refresh token: {token_data['refresh_token']}")
-        logger.info(f"⏳ Expires at: {expires_at.isoformat()}")
-
-        return jsonify({"status": "Authorization successful"}), 200
-    except Exception as e:
-        logger.exception("🔥 Ошибка при сохранении токена")
-        return jsonify({"error": "Internal server error"}), 500
+    return jsonify({"status": "Authorization successful"}), 200
 
 @app.route('/webhook/disk', methods=['POST'])
 def handle_disk_webhook():
     data = request.get_json()
-
     required_fields = ['folder_id', 'deal_id', 'file_ids']
     if not data or not all(field in data for field in required_fields):
         return jsonify({"error": "Missing required fields"}), 400
 
-    threading.Thread(
-        target=process_files,
-        args=(data['folder_id'], data['deal_id'], data['file_ids'])
-    ).start()
-
+    threading.Thread(target=process_files, args=(data['folder_id'], data['deal_id'], data['file_ids']), daemon=True).start()
     return jsonify({"status": "processing_started"}), 202
 
 def process_files(folder_id, deal_id, file_ids):
-    logger.info(f"📦 Обработка {len(file_ids)} файлов для сделки {deal_id}")
-    files = []
-    for file_id in file_ids:
-        file_info = BitrixAPI.api_call('disk.file.get', {'id': file_id})
-        if file_info.get('result'):
-            files.append({
-                'file_id': file_id,
-                'name': file_info['result'].get('NAME', '')
-            })
-
-    if files:
-        update_data = {
-            'id': deal_id,
-            'fields': {
-                FILE_FIELD_ID: [{'fileId': f['file_id']} for f in files]
-            }
-        }
+    try:
+        files = [{'fileId': fid} for fid in file_ids]
+        update_data = {'id': deal_id, 'fields': {FILE_FIELD_ID: files}}
         result = BitrixAPI.api_call('crm.deal.update', update_data)
 
         if result.get('result'):
-            logger.info(f"✅ Сделка {deal_id} успешно обновлена")
+            logger.info(f"Сделка {deal_id} успешно обновлена")
         else:
-            logger.error(f"❌ Ошибка обновления сделки {deal_id}: {result.get('error', 'Unknown error')}")
+            logger.error(f"Ошибка обновления сделки: {result.get('error')}")
+    except Exception as e:
+        logger.exception(f"Ошибка при обработке файлов: {str(e)}")
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)), threaded=True)
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)), threaded=True, debug=True)
