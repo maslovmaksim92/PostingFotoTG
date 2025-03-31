@@ -129,6 +129,25 @@ def transform_bitrix_data(data):
         return last
     return data
 
+def extract_deal_id_from_folder(folder_id):
+    try:
+        token = BitrixAPI.get_valid_token()
+        result = BitrixAPI.api_call("disk.folder.getchildren", {"id": folder_id})
+        for file in result.get("result", []):
+            name = file.get("NAME", "").lower()
+            if name.startswith("deal") and name.endswith(".txt"):
+                file_id = file.get("ID")
+                download = BitrixAPI.api_call("disk.file.get", {"id": file_id})
+                url = download.get("result", {}).get("DOWNLOAD_URL")
+                if url:
+                    content = requests.get(url).text.strip()
+                    if content.isdigit():
+                        logger.info(f"📄 ID сделки получен из файла: {content}")
+                        return content
+    except Exception as e:
+        logger.error(f"❌ Не удалось извлечь deal_id из папки: {e}")
+    return None
+
 # ======================== ROUTES =============================
 @app.route('/')
 def health():
@@ -168,6 +187,12 @@ def handle_disk_webhook():
         logger.info(f"🧾 Преобразованные данные: {transformed}")
 
         deal_id = transformed.get("deal_id")
+        folder_id = transformed.get("folder_id") or data.get("folder_id")
+
+        if not deal_id and folder_id:
+            logger.info("🔍 Ищем deal_id в папке, так как он не передан напрямую...")
+            deal_id = extract_deal_id_from_folder(folder_id)
+
         if not deal_id or not str(deal_id).isdigit():
             logger.error(f"❌ Неверный deal_id: {deal_id}")
             return jsonify({"error": "Invalid deal_id"}), 400
