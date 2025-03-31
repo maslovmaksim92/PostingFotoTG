@@ -9,10 +9,12 @@ from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 import requests
 
+# Загружаем переменные окружения
 load_dotenv()
 
 app = Flask(__name__)
 
+# Конфигурация
 BITRIX_CLIENT_ID = os.getenv('BITRIX_CLIENT_ID')
 BITRIX_CLIENT_SECRET = os.getenv('BITRIX_CLIENT_SECRET')
 BITRIX_REDIRECT_URI = os.getenv('BITRIX_REDIRECT_URI')
@@ -20,16 +22,18 @@ FILE_FIELD_ID = os.getenv('FILE_FIELD_ID')
 FOLDER_FIELD_ID = os.getenv('FOLDER_FIELD_ID')
 DATABASE = os.getenv('DATABASE_URL', 'sqlite:///app.db').replace('sqlite:///', '')
 
+# Логирование
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        logging.FileHandler("app.log"),
+        logging.FileHandler("logs/app.log", encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
+# Инициализация БД
 def init_db():
     with sqlite3.connect(DATABASE) as conn:
         conn.execute('''
@@ -48,13 +52,13 @@ class BitrixAPI:
     @staticmethod
     def execute_request(url, data):
         try:
-            logger.info(f"🔄 Отправка запроса на {url} с данными: {data}")
+            logger.info(f"🔄 Отправка запроса: {url} | data: {data}")
             response = requests.post(url, data=data, timeout=10)
-            logger.info(f"📩 Ответ: {response.status_code} - {response.text}")
+            logger.info(f"📩 Ответ: {response.status_code} | {response.text}")
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
-            logger.error(f"Ошибка запроса: {str(e)}")
+            logger.error(f"❌ Ошибка запроса: {e}")
             raise
 
     @classmethod
@@ -81,13 +85,16 @@ class BitrixAPI:
         with sqlite3.connect(DATABASE) as conn:
             row = conn.execute('SELECT access_token, refresh_token, expires_at FROM bitrix_tokens').fetchone()
             if row and datetime.fromisoformat(row[2]) > datetime.now():
+                logger.info("🔐 Используется access_token из БД")
                 return {'access_token': row[0], 'refresh_token': row[1]}
             if row:
+                logger.info("🔄 Обновляем access_token")
                 new_token = cls.refresh_token(row[1])
                 expires_at = datetime.now() + timedelta(seconds=new_token['expires_in'] - 60)
                 conn.execute('DELETE FROM bitrix_tokens')
-                conn.execute('INSERT INTO bitrix_tokens VALUES (?, ?, ?)',
-                             (new_token['access_token'], new_token['refresh_token'], expires_at.isoformat()))
+                conn.execute('INSERT INTO bitrix_tokens VALUES (?, ?, ?)', (
+                    new_token['access_token'], new_token['refresh_token'], expires_at.isoformat()
+                ))
                 conn.commit()
                 return new_token
             raise ValueError("Отсутствуют токены в базе данных")
@@ -97,70 +104,91 @@ class BitrixAPI:
         token = cls.get_valid_token()
         headers = {'Authorization': f'Bearer {token["access_token"]}', 'Content-Type': 'application/json'}
         url = f"https://vas-dom.bitrix24.ru/rest/{method}"
+        logger.info(f"📡 Bitrix API call: {url} | params: {params}")
         response = requests.post(url, json=params, headers=headers)
+        logger.info(f"📬 API response: {response.status_code} | {response.text}")
         response.raise_for_status()
         return response.json()
 
-def transform_bitrix_data(data):
-    if isinstance(data, dict):
-        return {k: transform_bitrix_data(v) for k, v in data.items()}
-    elif isinstance(data, list):
-        return [transform_bitrix_data(item) for item in data]
-    elif isinstance(data, str) and data.startswith('{=') and data.endswith('}'):
-        inner = data[2:-1]
-        if '.' in inner:
-            return inner.split('.')[-1]
-        else:
-            return inner
-    return data
+@app.route('/')
+def health():
+    return jsonify({"status": "ok", "time": datetime.now().isoformat()})
+
+@app.route('/oauth/callback')
+def oauth_callback():
+    code = request.args.get('code')
+    if not code:
+        return jsonify({"error": "Authorization code missing"}), 400
+    try:
+        token_data = BitrixAPI.get_token(code)
+        expires_at = datetime.now() + timedelta(seconds=token_data['expires_in'] - 60)
+        with sqlite3.connect(DATABASE) as conn:
+            conn.execute('DELETE FROM bitrix_tokens')
+            conn.execute('INSERT INTO bitrix_tokens VALUES (?, ?, ?)', (
+                token_data['access_token'], token_data['refresh_token'], expires_at.isoformat()
+            ))
+            conn.commit()
+        logger.info("✅ Авторизация успешна")
+        return jsonify({"status": "Authorization successful"}), 200
+    except Exception as e:
+        logger.exception("❌ Ошибка в oauth_callback")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/webhook/disk', methods=['POST'])
 def handle_disk_webhook():
     try:
         raw_data = request.data.decode('utf-8')
         logger.info(f"📥 Входящий JSON: {raw_data}")
-
-        clean_data = re.sub(r'//.*', '', raw_data)
-        clean_data = re.sub(r'/\*.*?\*/', '', clean_data, flags=re.DOTALL)
-        data = json.loads(clean_data)
-
-        transformed_data = transform_bitrix_data(data)
-        logger.info(f"🧾 Преобразованные данные: {transformed_data}")
-
-        deal_id = transformed_data.get('deal_id')
+        data = json.loads(re.sub(r'/\*.*?\*/|//.*', '', raw_data, flags=re.DOTALL))
+        deal_id = extract_field(data.get('deal_id'))
         if not deal_id:
-            return jsonify({"error": "Missing deal_id"}), 400
+            return jsonify({"error": "Invalid deal_id"}), 400
 
         deal = BitrixAPI.api_call('crm.deal.get', {'id': deal_id})
         folder_id = deal['result'].get(FOLDER_FIELD_ID)
         if not folder_id:
-            return jsonify({"error": "folder_id not found in deal"}), 400
+            logger.error(f"❌ Не найден folder_id в сделке")
+            return jsonify({"error": "folder_id not found"}), 400
 
+        logger.info(f"📁 Получен folder_id: {folder_id}")
         folder_data = BitrixAPI.api_call('disk.folder.getchildren', {'id': folder_id})
         file_ids = [item['ID'] for item in folder_data.get('result', []) if item['TYPE'] == 'file']
-
         if not file_ids:
-            return jsonify({"error": "No files found in folder"}), 400
+            return jsonify({"error": "No files in folder"}), 400
 
         threading.Thread(target=process_files, args=(folder_id, deal_id, file_ids), daemon=True).start()
         return jsonify({"status": "processing_started", "files": file_ids}), 202
 
     except Exception as e:
-        logger.exception(f"🔥 Ошибка при обработке webhook: {str(e)}")
+        logger.exception(f"🔥 Ошибка в handle_disk_webhook: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
+
+def extract_field(value):
+    if isinstance(value, str) and value.startswith('{=') and value.endswith('}'):
+        cleaned = value[2:-1]
+        return cleaned.split('.')[-1]
+    return value
 
 def process_files(folder_id, deal_id, file_ids):
     try:
-        logger.info(f"🚀 Обработка файлов: {file_ids} для сделки {deal_id}")
-        files = [{'fileId': fid} for fid in file_ids]
-        result = BitrixAPI.api_call('crm.deal.update', {'id': deal_id, 'fields': {FILE_FIELD_ID: files}})
-        logger.info(f"📤 Результат обновления сделки: {json.dumps(result, ensure_ascii=False)}")
-    except Exception as e:
-        logger.exception(f"🔥 Ошибка обработки файлов: {str(e)}")
+        files = []
+        for fid in file_ids:
+            try:
+                file_info = BitrixAPI.api_call('disk.file.get', {'id': fid})
+                if file_info.get('result'):
+                    files.append({'fileId': fid})
+                    logger.info(f"📎 Файл: {file_info['result'].get('NAME')} добавлен")
+            except Exception as e:
+                logger.warning(f"❗ Ошибка по файлу {fid}: {e}")
 
-@app.route('/')
-def health():
-    return jsonify({"status": "ok"})
+        if files:
+            update = {'id': deal_id, 'fields': {FILE_FIELD_ID: files}}
+            result = BitrixAPI.api_call('crm.deal.update', update)
+            logger.info(f"📤 Результат обновления сделки: {result}")
+        else:
+            logger.warning("❌ Нет файлов для прикрепления")
+    except Exception as e:
+        logger.exception(f"💥 Ошибка в process_files: {e}")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)), debug=False)
