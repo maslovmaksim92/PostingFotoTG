@@ -196,5 +196,14 @@ def process_files(folder_id, deal_id, file_ids):
         logger.exception(f"🔥 Ошибка в process_files: {e}")
 
 # ======================== RUN =============================
+@app.route("/log")
+def show_log():
+    try:
+        with open("logs/app.log", "r", encoding="utf-8") as f:
+            log_data = f.read()
+        return f"<pre>{log_data}</pre>"
+    except Exception as e:
+        return f"Ошибка при чтении лога: {str(e)}", 500
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), threaded=True)
