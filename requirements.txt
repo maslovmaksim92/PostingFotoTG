@@ -2,4 +2,16 @@ flask==3.1.0
 requests==2.32.3
 python-dotenv==1.0.1
 gunicorn==23.0.0
-
+whisper==1.1.10
+moviepy==1.0.3
+openai==1.59.7
+ffmpeg-python==0.2.0
+werkzeug==3.0.6
+SQLAlchemy==2.0.37
+rapidfuzz==3.9.7
+fuzzywuzzy==0.18.0
+dateparser==1.1.8
+torch==2.4.1
+tqdm==4.67.1
+pydantic==2.10.6
+transformers==4.27.4
