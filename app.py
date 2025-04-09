@@ -4,10 +4,8 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-logging.basicConfig(format='' %(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(format='%0((asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger()
-
-
 @app.route("/webhook/disk", methods=['POST'])
 def webhook_disk():
     try:
