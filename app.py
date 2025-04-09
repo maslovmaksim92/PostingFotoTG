@@ -44,7 +44,8 @@ def finalize_folder():
         )
 
         if resp.status_code != 200:
-            return jsonyfy(error="request to Bitrix failed", status=resp.status_code), 500)
+            return jsonify(error="request to Bitrix failed", status=resp.status_code), 500
+
 
         return jsonify(status="success")
     except Exception as e:
