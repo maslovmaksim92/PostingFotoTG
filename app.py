@@ -52,5 +52,5 @@ def finalize_folder():
         logger.exception()
         return jsonify(ordered={"error": "server error", "detail": str(e)}), 500
 
-If __name__ == "__main__":
+if __name__ == "__main__":
     app.run(debug=True)
