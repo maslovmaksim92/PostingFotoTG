@@ -1,0 +1,12 @@
+.xenv
+.ds_store
+logs/
+app.db
+/__pycache__/
+**.pyc
+.idea
+.pygs
+
+/* Application files */
+app.db
+
