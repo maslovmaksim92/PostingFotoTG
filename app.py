@@ -18,7 +18,7 @@ logger = logging.getLogger()
 
 
 # NOV: / webhook/finalize_folder
-@App.route("/webhook/finalize_folder", methods=['POST'])
+@app.route("/webhook/finalize_folder", methods=['POST'])
 def finalize_folder():
     try:
         data = request.get_json()
