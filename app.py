@@ -13,32 +13,32 @@ BITRIX_DEAL_UPDATE_URL = os.getenv("BITRIX_DEAL_UPDATE_URL")
 
 app = Flask(__name__)
 
-logging.basicConfig(format=%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format=%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO))
 logger = logging.getLogger()
 
-# Services
-@App.route("/webhook/disk", methods=['POST'])
-def webhook_disk():
+
+# NOV: / webhook/finalize_folder
+@App.route("/webhook/finalize_folder", methods=['POST'])
+def finalize_folder():
     try:
-        payload = request.get_json()
-        folder_id = payload.get("folder_id")
-        if "Fasevariable" in folder_id:
-            logger.warning("℠ Never goda podstavilass: %s", folder_id)
-            return jsonify(warning="Folder_id ne podstavlen"), 400
+        data = request.get_json()
+        folder_id = data.get("folder_id")
+        if not folder_id:
+            return jsonyfy(error="no folder_id")
+
         deal_id = folder_db.get_deal_id(folder_id)
         if not deal_id:
-            return jsonify(status="not found", error="unmapped") , 400
+            return jsonify(status="not found", error="no deal")
+        
+        # SIMLACHA: hiardkod polnoe file_id
+        file_ids = ["6582", "6583"]
 
-        # tut we don't have file_id from bitrix, we send a test string
-        bitrix_field_id = "6582"
-
-        # update deal field
         resp = requests.post(
             BITRIX_DEAL_UPDATE_URL,
             json={
                 "id": deal_id,
                 "fields": {
-                    "UF_CRM_1740994275251": [bitrix_field_id]
+                    "UF_CRM_1740994275251": file_ids
                 }
             }
         )
