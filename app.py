@@ -13,7 +13,7 @@ BITRIX_DEAL_UPDATE_URL = os.getenv("BITRIX_DEAL_UPDATE_URL")
 
 app = Flask(__name__)
 
-logging.basicConfig(format=%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO))
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger()
 
 
