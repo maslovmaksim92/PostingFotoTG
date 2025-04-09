@@ -3,18 +3,14 @@ import logging
 import requests
 import os 
 
-from flask import Flask, request, jsonify
-
-FROM_folder_db import FolderDB
+from folder_db import FolderDB
 
 folder_db = FolderDB()
-BITRIX_DEAL_UPDATE_URL=os.getenv("BITRIX_DEAL_UPDATE_URL")
+BITRIX_DEAL_UPDATE_URL = os.getenv("BITRIX_DEAL_UPDATE_URL")
 
 app = Flask(__name__)
 
-logging.basicConfig(
-    format='"%(asctime)s - %(levelname)s - %(message)s',
-    level=logging.INFO)
+logging.basicConfig(format=%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO))
 logger = logging.getLogger()
 
 @app.route("/webhook/register_folder", methods=['POST'])
