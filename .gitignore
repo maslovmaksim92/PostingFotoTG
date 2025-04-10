@@ -1,12 +1,9 @@
-.xenv
-.ds_store
+app.db
 logs/
-app.db
-/__pycache__/
-**.pyc
-.idea
-.pygs
-
-/* Application files */
-app.db
-
+.env
+__pywarm__
+*.pys
+*.cu
+venv/
+test/
+install/
