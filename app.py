@@ -7,6 +7,7 @@ app = Flask(__name__)
 WEBHOOK_BASE = "https://vas-dom.bitrix24.ru/rest/1/gq2ixv9nypiimwi9"
 FOLDER_CHILDREN_METHOD = f"{WEBHOOK_BASE}/disk.folder.getchildren.json"
 DEAL_UPDATE_METHOD = f"{WEBHOOK_BASE}/crm.deal.update.json"
+TIMELINE_COMMENT_METHOD = f"{WEBHOOK_BASE}/crm.timeline.comment.add.json"
 
 FIELD_CODE = "UF_CRM_1740994275251"  # поле "Файл" множественное
 
@@ -63,9 +64,62 @@ def attach_files():
         return jsonify({"error": f"Ошибка обновления сделки: {str(e)}"}), 500
 
     if update_data.get("result") is True:
-        return jsonify({"status": "OK", "message": f"[✅] Файлы прикреплены к сделке #{deal_id}"})
+        return jsonify({"status": "OK", "message": f"[✅] Файлы прикреплены к сделке #{deal_id}"}), 200
     else:
         return jsonify({"error": "[❌] Bitrix не принял файлы", "response": update_data}), 500
+
+
+@app.route("/attach_to_timeline", methods=["GET"])
+def attach_to_timeline():
+    deal_id = request.args.get("deal_id")
+    folder_id = request.args.get("folder_id")
+
+    if not deal_id or not folder_id:
+        return jsonify({"error": "[❌] Не передан deal_id или folder_id"}), 400
+
+    try:
+        resp = requests.post(FOLDER_CHILDREN_METHOD, json={"id": folder_id})
+        data = resp.json()
+    except Exception as e:
+        return jsonify({"error": f"Ошибка запроса к Bitrix: {str(e)}"}), 500
+
+    files = data.get("result", [])
+    if not files:
+        return jsonify({"error": "[❌] Папка пуста или нет доступа"}), 400
+
+    attachments = []
+    for f in files:
+        file_id = f.get("ID")
+        name = f.get("NAME")
+        if file_id:
+            attachments.append({"ENTITY_TYPE": "disk_file", "ENTITY_ID": file_id})
+            print(f"📎 Вставляем в таймлайн файл: {name} (ID: {file_id})")
+
+    if not attachments:
+        return jsonify({"error": "[❌] Нет доступных файлов для вложения"}), 400
+
+    payload = {
+        "ENTITY_ID": deal_id,
+        "ENTITY_TYPE": "deal",
+        "COMMENT": "📷 Автоматически прикреплены файлы из папки",
+        "ATTACH": attachments
+    }
+
+    try:
+        send_resp = requests.post(TIMELINE_COMMENT_METHOD, json=payload)
+        result = send_resp.json()
+    except Exception as e:
+        return jsonify({"error": f"Ошибка при отправке комментария: {str(e)}"}), 500
+
+    if result.get("result"):
+        return jsonify({
+            "status": "OK",
+            "message": f"[✅] Файлы прикреплены в таймлайн сделки #{deal_id}",
+            "count": len(attachments)
+        })
+    else:
+        return jsonify({"error": "[❌] Bitrix не принял таймлайн", "response": result}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=10000)
