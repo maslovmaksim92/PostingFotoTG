@@ -15,24 +15,16 @@ class BitrixClient:
         self.webhook = BITRIX_WEBHOOK
 
     def upload_file_to_folder(self, folder_id: int, filename: str, content: bytes):
-        # Шаг 1 — получить uploadUrl
         init_resp = requests.post(f"{self.webhook}/disk.folder.uploadfile", data={"id": folder_id})
-        print("Init upload response:", init_resp.text)
-        init_json = init_resp.json()
-
-        upload_url = init_json.get("result", {}).get("uploadUrl")
+        upload_url = init_resp.json().get("result", {}).get("uploadUrl")
         if not upload_url:
-            raise HTTPException(status_code=400, detail=f"Не удалось получить uploadUrl: {init_json}")
+            raise HTTPException(status_code=400, detail=f"Не удалось получить uploadUrl: {init_resp.text}")
 
-        # Шаг 2 — загрузка файла на uploadUrl
         files = {"file": (filename, content)}
         final_resp = requests.post(upload_url, files=files)
-        print("Final upload response:", final_resp.text)
-        final_json = final_resp.json()
-
-        file_id = final_json.get("result", {}).get("ID")
+        file_id = final_resp.json().get("result", {}).get("ID")
         if not file_id:
-            raise HTTPException(status_code=400, detail=f"Не удалось получить ID из финального ответа: {final_json}")
+            raise HTTPException(status_code=400, detail=f"Не удалось получить ID из финального ответа: {final_resp.text}")
 
         return int(file_id)
 
@@ -41,8 +33,12 @@ class BitrixClient:
             "id": deal_id,
             f"fields[{field_code}]": file_id
         })
-        print("Attach file response:", response.text)
         return response.json().get("result", False)
+
+    def get_deal(self, deal_id: int) -> dict:
+        response = requests.get(f"{self.webhook}/crm.deal.get", params={"id": deal_id})
+        print("crm.deal.get response:", response.text)
+        return response.json()
 
 @app.get("/")
 def health():
@@ -51,13 +47,10 @@ def health():
 @app.post("/test-attach")
 def test_attach():
     try:
-        print("=== /test-attach called ===")
         bitrix = BitrixClient()
-
         file_path = Path("image.png")
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Файл image.png не найден")
-
         with file_path.open("rb") as f:
             content = f.read()
 
@@ -72,6 +65,15 @@ def test_attach():
 
         return {"status": "ok", "file_id": file_id}
     except Exception as e:
-        print("ERROR:", str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/debug-deal")
+def debug_deal():
+    try:
+        bitrix = BitrixClient()
+        deal = bitrix.get_deal(11720)
+        return deal
+    except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
