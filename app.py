@@ -31,10 +31,14 @@ class BitrixClient:
         return int(file_id)
 
     def attach_file_to_deal(self, deal_id: int, field_code: str, file_id: int) -> bool:
-        response = requests.post(f"{self.webhook}/crm.deal.update", data={
+        payload = {
             "id": deal_id,
-            f"fields[{field_code}][0]": file_id  # Правильная запись массива
-        })
+            "fields": {
+                field_code: [file_id]  # JSON-массив
+            }
+        }
+        headers = {"Content-Type": "application/json"}
+        response = requests.post(f"{self.webhook}/crm.deal.update", json=payload, headers=headers)
         print("crm.deal.update response:", response.status_code, response.text)
         return response.json().get("result", False)
 
