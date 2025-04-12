@@ -79,12 +79,12 @@ def attach_folder(req: AttachRequest):
         files = bitrix.get_files_from_folder(req.folder_id)
 
         file_ids = []
-        html_blocks = []
+        html_links = []
         tg_photos = []
 
-        for f in files:
+        for idx, f in enumerate(files):
             fid = f.get("ID")
-            name = f.get("NAME") or "photo.jpg"
+            name = f.get("NAME") or f"photo{idx+1}.jpg"
             ext = os.path.splitext(name)[-1].lower()
             if fid and ext in ALLOWED_EXTENSIONS:
                 url = bitrix.get_download_url(fid)
@@ -92,7 +92,7 @@ def attach_folder(req: AttachRequest):
                     content, ctype = bitrix.download_file_bytes(url)
                     if ctype.startswith("image"):
                         file_ids.append(fid)
-                        html_blocks.append(f'<img src="{url}" style="max-width:100%;margin-bottom:10px;"/>')
+                        html_links.append(f'📎 <a href="{url}" target="_blank">{name}</a><br/>')
                         tg_photos.append((name, content))
 
         if not file_ids:
@@ -100,7 +100,7 @@ def attach_folder(req: AttachRequest):
 
         bitrix.update_deal_fields(req.deal_id, {
             FIELD_FILE: file_ids,
-            FIELD_HTML: "\n".join(html_blocks)
+            FIELD_HTML: "\n".join(html_links)
         })
 
         telegram.send_photos(tg_photos)
