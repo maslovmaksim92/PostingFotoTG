@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import os
 import requests
 import traceback
+from io import BytesIO
 
 app = FastAPI()
 
@@ -26,40 +27,41 @@ class BitrixClient:
         resp = requests.get(f"{self.webhook}/disk.folder.getchildren", params={"id": folder_id})
         return resp.json().get("result", [])
 
-    def get_public_link_or_download(self, file_id: int) -> str:
-        resp = requests.get(f"{self.webhook}/disk.file.getpubliclink", params={"id": file_id})
-        link = resp.json().get("result", {}).get("LINK")
-        if link:
-            return link
-        # fallback: получить download_url
+    def get_download_url(self, file_id: int) -> str:
         info = requests.get(f"{self.webhook}/disk.file.get", params={"id": file_id})
         return info.json().get("result", {}).get("DOWNLOAD_URL", "")
+
+    def download_file_bytes(self, url: str) -> bytes:
+        return requests.get(url).content
 
     def update_deal_fields(self, deal_id: int, fields: dict) -> bool:
         payload = {"id": deal_id, "fields": fields}
         resp = requests.post(f"{self.webhook}/crm.deal.update", json=payload)
-        print("crm.deal.update:", resp.status_code, resp.text)
         return resp.json().get("result", False)
-
-    def get_deal_fields(self, deal_id: int) -> dict:
-        resp = requests.get(f"{self.webhook}/crm.deal.get", params={"id": deal_id})
-        return resp.json().get("result", {})
 
 class TelegramClient:
     def __init__(self):
         self.token = TG_BOT_TOKEN
         self.chat_id = TG_CHAT_ID
 
-    def send_photos(self, urls: list[str]) -> bool:
+    def send_photos(self, files: list[tuple[str, bytes]]) -> bool:
         if not self.token or not self.chat_id:
             print("Telegram: токен или chat_id не заданы")
             return False
+
         endpoint = f"https://api.telegram.org/bot{self.token}/sendMediaGroup"
         CHUNK = 10
         success = True
-        for i in range(0, len(urls), CHUNK):
-            media = [{"type": "photo", "media": url} for url in urls[i:i+CHUNK]]
-            resp = requests.post(endpoint, json={"chat_id": self.chat_id, "media": media})
+
+        for i in range(0, len(files), CHUNK):
+            media = []
+            files_payload = {}
+            for idx, (filename, content) in enumerate(files[i:i+CHUNK]):
+                key = f"photo{idx}"
+                files_payload[key] = (filename, BytesIO(content))
+                media.append({"type": "photo", "media": f"attach://{key}"})
+
+            resp = requests.post(endpoint, data={"chat_id": self.chat_id, "media": str(media).replace("'", '"')}, files=files_payload)
             print("TG resp:", resp.status_code, resp.text)
             success = success and resp.json().get("ok", False)
         return success
@@ -73,17 +75,19 @@ def attach_folder(req: AttachRequest):
         files = bitrix.get_files_from_folder(req.folder_id)
 
         file_ids = []
-        urls = []
         html_blocks = []
+        tg_photos = []
 
         for f in files:
             fid = f.get("ID")
+            name = f.get("NAME") or "photo.jpg"
             if fid:
-                url = bitrix.get_public_link_or_download(fid)
+                url = bitrix.get_download_url(fid)
                 if url:
                     file_ids.append(fid)
-                    urls.append(url)
                     html_blocks.append(f'<img src="{url}" style="max-width:100%;margin-bottom:10px;"/>')
+                    content = bitrix.download_file_bytes(url)
+                    tg_photos.append((name, content))
 
         if not file_ids:
             raise HTTPException(status_code=404, detail="Файлы есть, но ссылки не получены")
@@ -93,7 +97,7 @@ def attach_folder(req: AttachRequest):
             FIELD_HTML: "\n".join(html_blocks)
         })
 
-        telegram.send_photos(urls)
+        telegram.send_photos(tg_photos)
 
         return {"status": "ok", "files_attached": len(file_ids)}
     except Exception as e:
