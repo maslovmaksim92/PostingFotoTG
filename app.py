@@ -28,8 +28,13 @@ class BitrixClient:
         })
         return response.json().get("result", False)
 
+@app.get("/")
+def health():
+    return {"status": "ok"}
+
 @app.post("/test-attach")
 def test_attach():
+    print("Запущен эндпоинт /test-attach")
     bitrix = BitrixClient()
 
     file_path = Path("image.png")
