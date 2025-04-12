@@ -37,43 +37,21 @@ class BitrixClient:
 
     def get_deal(self, deal_id: int) -> dict:
         response = requests.get(f"{self.webhook}/crm.deal.get", params={"id": deal_id})
-        print("crm.deal.get response:", response.text)
+        return response.json()
+
+    def get_user_fields(self) -> dict:
+        response = requests.get(f"{self.webhook}/crm.deal.userfield.list")
         return response.json()
 
 @app.get("/")
 def health():
     return {"status": "ok"}
 
-@app.post("/test-attach")
-def test_attach():
+@app.get("/debug-fields")
+def debug_fields():
     try:
         bitrix = BitrixClient()
-        file_path = Path("image.png")
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="Файл image.png не найден")
-        with file_path.open("rb") as f:
-            content = f.read()
-
-        folder_id = 198874
-        deal_id = 11720
-        field_code = "UF_CRM_1744310845527"
-
-        file_id = bitrix.upload_file_to_folder(folder_id, "image.png", content)
-        success = bitrix.attach_file_to_deal(deal_id, field_code, file_id)
-        if not success:
-            raise HTTPException(status_code=400, detail="Не удалось прикрепить файл к сделке")
-
-        return {"status": "ok", "file_id": file_id}
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/debug-deal")
-def debug_deal():
-    try:
-        bitrix = BitrixClient()
-        deal = bitrix.get_deal(11720)
-        return deal
+        return bitrix.get_user_fields()
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
