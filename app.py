@@ -33,7 +33,7 @@ class BitrixClient:
     def attach_file_to_deal(self, deal_id: int, field_code: str, file_id: int) -> bool:
         response = requests.post(f"{self.webhook}/crm.deal.update", data={
             "id": deal_id,
-            f"fields[{field_code}][]": file_id
+            f"fields[{field_code}][0]": file_id  # Правильная запись массива
         })
         print("crm.deal.update response:", response.status_code, response.text)
         return response.json().get("result", False)
@@ -53,6 +53,31 @@ def debug_deal_files():
         bitrix = BitrixClient()
         files = bitrix.get_deal_field_files(11720, FIELD_CODE)
         return {"field": FIELD_CODE, "value": files}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/test-attach")
+def test_attach():
+    try:
+        bitrix = BitrixClient()
+        file_path = Path("image.png")
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Файл image.png не найден")
+
+        with file_path.open("rb") as f:
+            content = f.read()
+
+        folder_id = 198874
+        deal_id = 11720
+        filename = f"image_{int(time.time())}.png"
+
+        file_id = bitrix.upload_file_to_folder(folder_id, filename, content)
+        success = bitrix.attach_file_to_deal(deal_id, FIELD_CODE, file_id)
+        if not success:
+            raise HTTPException(status_code=400, detail="Не удалось прикрепить файл к сделке")
+
+        return {"status": "ok", "file_id": file_id}
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
