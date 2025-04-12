@@ -15,17 +15,26 @@ class BitrixClient:
         self.webhook = BITRIX_WEBHOOK
 
     def upload_file_to_folder(self, folder_id: int, filename: str, content: bytes):
+        # Шаг 1 — получить uploadUrl
+        init_resp = requests.post(f"{self.webhook}/disk.folder.uploadfile", data={"id": folder_id})
+        print("Init upload response:", init_resp.text)
+        init_json = init_resp.json()
+
+        upload_url = init_json.get("result", {}).get("uploadUrl")
+        if not upload_url:
+            raise HTTPException(status_code=400, detail=f"Не удалось получить uploadUrl: {init_json}")
+
+        # Шаг 2 — загрузка файла на uploadUrl
         files = {"file": (filename, content)}
-        response = requests.post(f"{self.webhook}/disk.folder.uploadfile", data={"id": folder_id}, files=files)
-        print("Upload file response:", response.status_code, response.text)
-        try:
-            json_data = response.json()
-            if "result" in json_data and isinstance(json_data["result"], dict):
-                if "ID" in json_data["result"]:
-                    return int(json_data["result"]["ID"])
-            raise HTTPException(status_code=400, detail=f"Bitrix response missing ID: {json_data}")
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Upload failed, not JSON or missing: {str(e)}")
+        final_resp = requests.post(upload_url, files=files)
+        print("Final upload response:", final_resp.text)
+        final_json = final_resp.json()
+
+        file_id = final_json.get("result", {}).get("ID")
+        if not file_id:
+            raise HTTPException(status_code=400, detail=f"Не удалось получить ID из финального ответа: {final_json}")
+
+        return int(file_id)
 
     def attach_file_to_deal(self, deal_id: int, field_code: str, file_id: int) -> bool:
         response = requests.post(f"{self.webhook}/crm.deal.update", data={
