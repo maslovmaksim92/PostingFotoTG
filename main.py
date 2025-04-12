@@ -1,49 +1,31 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import requests
-import os
+from bitrix import BitrixClient
+from pathlib import Path
 
 app = FastAPI()
 
-BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
+@app.post("/test-attach")
+def test_attach():
+    bitrix = BitrixClient()
 
-class AttachRequest(BaseModel):
-    deal_id: int
-    file_id: int
-    field_code: str = "UF_CRM_FILE"
+    file_path = Path("image.png")
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Файл image.png не найден")
 
-@app.post("/attach-file")
-def attach_file(req: AttachRequest):
-    if not BITRIX_WEBHOOK:
-        raise HTTPException(status_code=500, detail="Bitrix webhook is not set")
+    with file_path.open("rb") as f:
+        content = f.read()
 
-    # Получаем информацию о файле
-    file_info = requests.get(f"{BITRIX_WEBHOOK}/disk.file.get", params={"id": req.file_id}).json()
-    if "result" not in file_info:
-        raise HTTPException(status_code=400, detail=f"Failed to get file info: {file_info}")
+    # Загрузка файла в папку
+    folder_id = 198874
+    deal_id = 11720
+    field_code = "UF_CRM_1744310845527"
 
-    download_url = file_info["result"].get("DOWNLOAD_URL")
-    if not download_url:
-        raise HTTPException(status_code=400, detail="No download URL found")
+    file_id = bitrix.upload_file_to_folder(folder_id, "image.png", content)
+    if not file_id:
+        raise HTTPException(status_code=400, detail="Ошибка загрузки файла в папку Bitrix")
 
-    # Скачиваем файл
-    file_content = requests.get(download_url).content
+    success = bitrix.attach_file_to_deal(deal_id, field_code, file_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Не удалось прикрепить файл к сделке")
 
-    # Загружаем файл в Bitrix (через временное поле)
-    files = {"file": ("attachment.jpg", file_content)}
-    upload_resp = requests.post(f"{BITRIX_WEBHOOK}/disk.folder.uploadfile", files=files, data={"id": 1}).json()
-    if "result" not in upload_resp:
-        raise HTTPException(status_code=400, detail=f"File upload failed: {upload_resp}")
-
-    uploaded_file_id = upload_resp["result"]["ID"]
-
-    # Прикрепляем файл к сделке
-    update = requests.post(f"{BITRIX_WEBHOOK}/crm.deal.update", data={
-        "id": req.deal_id,
-        f"fields[{req.field_code}]": uploaded_file_id
-    }).json()
-
-    if not update.get("result"):
-        raise HTTPException(status_code=400, detail=f"Failed to attach file to deal: {update}")
-
-    return {"status": "ok", "file_id": uploaded_file_id}
+    return {"status": "ok", "file_id": file_id}
