@@ -13,6 +13,8 @@ FIELD_HTML = "UF_CRM_PHOTO_HTML_BLOCK"
 TG_BOT_TOKEN = os.getenv("TG_GITHUB_BOT")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif"}
+
 class AttachRequest(BaseModel):
     deal_id: int
     folder_id: int
@@ -31,8 +33,10 @@ class BitrixClient:
         info = requests.get(f"{self.webhook}/disk.file.get", params={"id": file_id})
         return info.json().get("result", {}).get("DOWNLOAD_URL", "")
 
-    def download_file_bytes(self, url: str) -> bytes:
-        return requests.get(url).content
+    def download_file_bytes(self, url: str) -> tuple[bytes, str]:
+        resp = requests.get(url, stream=True)
+        content_type = resp.headers.get("Content-Type", "")
+        return resp.content, content_type
 
     def update_deal_fields(self, deal_id: int, fields: dict) -> bool:
         payload = {"id": deal_id, "fields": fields}
@@ -81,13 +85,15 @@ def attach_folder(req: AttachRequest):
         for f in files:
             fid = f.get("ID")
             name = f.get("NAME") or "photo.jpg"
-            if fid:
+            ext = os.path.splitext(name)[-1].lower()
+            if fid and ext in ALLOWED_EXTENSIONS:
                 url = bitrix.get_download_url(fid)
                 if url:
-                    file_ids.append(fid)
-                    html_blocks.append(f'<img src="{url}" style="max-width:100%;margin-bottom:10px;"/>')
-                    content = bitrix.download_file_bytes(url)
-                    tg_photos.append((name, content))
+                    content, ctype = bitrix.download_file_bytes(url)
+                    if ctype.startswith("image"):
+                        file_ids.append(fid)
+                        html_blocks.append(f'<img src="{url}" style="max-width:100%;margin-bottom:10px;"/>')
+                        tg_photos.append((name, content))
 
         if not file_ids:
             raise HTTPException(status_code=404, detail="Файлы есть, но ссылки не получены")
