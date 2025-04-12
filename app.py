@@ -17,11 +17,11 @@ class BitrixClient:
     def upload_file_to_folder(self, folder_id: int, filename: str, content: bytes):
         files = {"file": (filename, content)}
         response = requests.post(f"{self.webhook}/disk.folder.uploadfile", data={"id": folder_id}, files=files)
-        print("Upload file response:", response.text)
+        print("Upload file response:", response.status_code, response.text)
         json_data = response.json()
-        if "result" in json_data:
+        if "result" in json_data and "ID" in json_data["result"]:
             return int(json_data["result"]["ID"])
-        return None
+        raise HTTPException(status_code=400, detail=f"Ошибка Bitrix: {json_data}")
 
     def attach_file_to_deal(self, deal_id: int, field_code: str, file_id: int) -> bool:
         response = requests.post(f"{self.webhook}/crm.deal.update", data={
@@ -53,9 +53,6 @@ def test_attach():
         field_code = "UF_CRM_1744310845527"
 
         file_id = bitrix.upload_file_to_folder(folder_id, "image.png", content)
-        if not file_id:
-            raise HTTPException(status_code=400, detail="Ошибка загрузки файла в папку Bitrix")
-
         success = bitrix.attach_file_to_deal(deal_id, field_code, file_id)
         if not success:
             raise HTTPException(status_code=400, detail="Не удалось прикрепить файл к сделке")
