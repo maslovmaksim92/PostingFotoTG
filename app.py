@@ -8,7 +8,8 @@ import time
 app = FastAPI()
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
-FIELD_CODE = "UF_CRM_1740994275251"
+FIELD_CODE = "UF_CRM_1740994275251"  # поле файл
+FIELD_URL_CODE = "UF_CRM_FILE_IMAGE_URL"  # строка для подстановки ссылки в письмо
 
 class BitrixClient:
     def __init__(self):
@@ -24,42 +25,24 @@ class BitrixClient:
 
         files = {"file": (filename, content)}
         final_resp = requests.post(upload_url, files=files)
-        file_id = final_resp.json().get("result", {}).get("ID")
+        file_json = final_resp.json().get("result", {})
+        file_id = file_json.get("ID")
         if not file_id:
             raise HTTPException(status_code=400, detail=f"Не удалось получить ID из финального ответа: {final_resp.text}")
 
-        return int(file_id)
+        return int(file_id), file_json.get("DOWNLOAD_URL")
 
-    def attach_file_to_deal(self, deal_id: int, field_code: str, file_id: int) -> bool:
-        payload = {
-            "id": deal_id,
-            "fields": {
-                field_code: [file_id]  # JSON-массив
-            }
-        }
+    def update_deal_fields(self, deal_id: int, fields: dict) -> bool:
+        payload = {"id": deal_id, "fields": fields}
         headers = {"Content-Type": "application/json"}
         response = requests.post(f"{self.webhook}/crm.deal.update", json=payload, headers=headers)
-        print("crm.deal.update response:", response.status_code, response.text)
+        print("crm.deal.update:", response.status_code, response.text)
         return response.json().get("result", False)
 
     def get_deal_field_files(self, deal_id: int, field_code: str):
         response = requests.get(f"{self.webhook}/crm.deal.get", params={"id": deal_id})
         data = response.json()
         return data.get("result", {}).get(field_code, None)
-
-@app.get("/")
-def health():
-    return {"status": "ok"}
-
-@app.get("/debug-deal-files")
-def debug_deal_files():
-    try:
-        bitrix = BitrixClient()
-        files = bitrix.get_deal_field_files(11720, FIELD_CODE)
-        return {"field": FIELD_CODE, "value": files}
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/test-attach")
 def test_attach():
@@ -76,12 +59,31 @@ def test_attach():
         deal_id = 11720
         filename = f"image_{int(time.time())}.png"
 
-        file_id = bitrix.upload_file_to_folder(folder_id, filename, content)
-        success = bitrix.attach_file_to_deal(deal_id, FIELD_CODE, file_id)
-        if not success:
-            raise HTTPException(status_code=400, detail="Не удалось прикрепить файл к сделке")
+        file_id, download_url = bitrix.upload_file_to_folder(folder_id, filename, content)
 
-        return {"status": "ok", "file_id": file_id}
+        success = bitrix.update_deal_fields(deal_id, {
+            FIELD_CODE: [file_id],
+            FIELD_URL_CODE: download_url
+        })
+
+        if not success:
+            raise HTTPException(status_code=400, detail="Не удалось обновить сделку")
+
+        return {"status": "ok", "file_id": file_id, "url": download_url}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/")
+def health():
+    return {"status": "ok"}
+
+@app.get("/debug-deal-files")
+def debug_deal_files():
+    try:
+        bitrix = BitrixClient()
+        files = bitrix.get_deal_field_files(11720, FIELD_CODE)
+        return {"field": FIELD_CODE, "value": files}
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
