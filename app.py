@@ -3,6 +3,7 @@ from pathlib import Path
 import os
 import requests
 import traceback
+import time
 
 app = FastAPI()
 
@@ -31,7 +32,7 @@ class BitrixClient:
     def attach_file_to_deal(self, deal_id: int, field_code: str, file_id: int) -> bool:
         response = requests.post(f"{self.webhook}/crm.deal.update", data={
             "id": deal_id,
-            f"fields[{field_code}][]": file_id  # Передаём как массив (multiple=true)
+            f"fields[{field_code}][]": file_id
         })
         print("crm.deal.update response:", response.status_code, response.text)
         return response.json().get("result", False)
@@ -64,14 +65,16 @@ def test_attach():
         file_path = Path("image.png")
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Файл image.png не найден")
+
         with file_path.open("rb") as f:
             content = f.read()
 
         folder_id = 198874
         deal_id = 11720
         field_code = "UF_CRM_1740994275251"
+        filename = f"image_{int(time.time())}.png"
 
-        file_id = bitrix.upload_file_to_folder(folder_id, "image.png", content)
+        file_id = bitrix.upload_file_to_folder(folder_id, filename, content)
         success = bitrix.attach_file_to_deal(deal_id, field_code, file_id)
         if not success:
             raise HTTPException(status_code=400, detail="Не удалось прикрепить файл к сделке")
