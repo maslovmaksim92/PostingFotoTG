@@ -6,12 +6,14 @@ import traceback
 
 app = FastAPI()
 
-@app.post("/webhook/debug_log")
-async def debug_log(request: Request):
+@app.post("/webhook/unsafe_log")
+async def unsafe_log(request: Request):
     try:
-        payload = await request.json()
-        print("📩 [DEBUG_LOG] Payload from Bitrix:", payload)
-        return {"status": "ok", "received": payload}
+        raw = await request.body()
+        headers = dict(request.headers)
+        print("\n🔍 [UNSAFE_LOG] Raw body:", raw.decode(errors="ignore"))
+        print("📩 Headers:", headers)
+        return {"status": "ok", "length": len(raw)}
     except Exception as e:
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": str(e)})
