@@ -43,6 +43,7 @@ def attach_folder(req: AttachRequest):
     try:
         bitrix = BitrixClient()
         files = bitrix.get_files_from_folder(req.folder_id)
+
         file_ids = []
         html_blocks = []
 
@@ -55,7 +56,7 @@ def attach_folder(req: AttachRequest):
                     html_blocks.append(f'<img src="{public_url}" style="max-width:100%;margin-bottom:10px;"/>')
 
         if not file_ids:
-            raise HTTPException(status_code=404, detail="Нет доступных файлов")
+            raise HTTPException(status_code=404, detail="Файлы найдены, но не удалось получить ссылки")
 
         bitrix.update_deal_fields(req.deal_id, {
             FIELD_FILE: file_ids,
@@ -63,19 +64,6 @@ def attach_folder(req: AttachRequest):
         })
 
         return {"status": "ok", "files_attached": len(file_ids)}
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/debug-deal-files")
-def debug_deal_files():
-    try:
-        bitrix = BitrixClient()
-        data = bitrix.get_deal_fields(11720)
-        return {
-            "file_field": data.get(FIELD_FILE),
-            "html_block": data.get(FIELD_HTML)
-        }
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
