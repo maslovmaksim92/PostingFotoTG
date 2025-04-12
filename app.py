@@ -18,10 +18,14 @@ class BitrixClient:
         files = {"file": (filename, content)}
         response = requests.post(f"{self.webhook}/disk.folder.uploadfile", data={"id": folder_id}, files=files)
         print("Upload file response:", response.status_code, response.text)
-        json_data = response.json()
-        if "result" in json_data and "ID" in json_data["result"]:
-            return int(json_data["result"]["ID"])
-        raise HTTPException(status_code=400, detail=f"Ошибка Bitrix: {json_data}")
+        try:
+            json_data = response.json()
+            if "result" in json_data and isinstance(json_data["result"], dict):
+                if "ID" in json_data["result"]:
+                    return int(json_data["result"]["ID"])
+            raise HTTPException(status_code=400, detail=f"Bitrix response missing ID: {json_data}")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Upload failed, not JSON or missing: {str(e)}")
 
     def attach_file_to_deal(self, deal_id: int, field_code: str, file_id: int) -> bool:
         response = requests.post(f"{self.webhook}/crm.deal.update", data={
