@@ -1,6 +1,6 @@
 import os
 import base64
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from loguru import logger
 import httpx
@@ -16,6 +16,12 @@ class FolderPayload(BaseModel):
     folder_id: int
 
 
+@app.post("/webhook/test")
+async def test_webhook(payload: dict):
+    logger.info(f"🔥 Тестовый вебхук получен: {payload}")
+    return {"status": "ok", "echo": payload}
+
+
 @app.post("/webhook/register_folder")
 async def register_folder(payload: FolderPayload):
     try:
@@ -24,7 +30,6 @@ async def register_folder(payload: FolderPayload):
         logger.info(f"📥 Вебхук получен: deal={deal_id}, folder={folder_id}")
 
         async with httpx.AsyncClient() as client:
-            # Получаем список файлов в папке
             resp = await client.post(f"{BITRIX_WEBHOOK}/disk.folder.getchildren", json={"id": folder_id})
             children = resp.json().get("result", [])
             file_list = [f for f in children if f.get("DOWNLOAD_URL")]
