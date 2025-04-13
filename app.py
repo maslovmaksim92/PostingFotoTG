@@ -1,35 +1,31 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from pydantic import BaseModel
 from loguru import logger
-import httpx
 import os
+import httpx
 
 app = FastAPI()
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
 FIELD_CODE = "UF_CRM_1740994275251"
 
-
-class RegisterFolderPayload(BaseModel):
+class FolderPayload(BaseModel):
     deal_id: int
     folder_id: int
 
-
 @app.post("/webhook/register_folder")
-async def register_folder(payload: RegisterFolderPayload):
-    deal_id = payload.deal_id
-    folder_id = payload.folder_id
-    logger.info(f"\U0001F4E5 Получен вебхук: deal={deal_id}, folder={folder_id}")
+async def register_folder(data: FolderPayload):
+    deal_id = data.deal_id
+    folder_id = data.folder_id
+    logger.info(f"\U0001F4E5 Вебхук получен: deal={deal_id}, folder={folder_id}")
 
     async with httpx.AsyncClient() as client:
-        # Получение списка файлов
         r = await client.post(f"{BITRIX_WEBHOOK}/disk.folder.getchildren", json={"id": folder_id})
-        children = r.json().get("result", [])
-        file_ids = [str(file["ID"]) for file in children if file["TYPE"] == "file"]
-        logger.info(f"\U0001F5CE Найдено файлов: {len(file_ids)} — {file_ids}")
+        files = r.json().get("result", [])
+        file_ids = [str(f["ID"]) for f in files if f.get("TYPE") == "file"]
+        logger.info(f"\U0001F5CE Найдено файлов: {file_ids}")
 
-        # Прикрепляем файлы к сделке
-        attached = []
+        attached_ids = []
         for fid in file_ids:
             attach_resp = await client.post(f"{BITRIX_WEBHOOK}/disk.attachedObject.add", json={
                 "ENTITY_ID": deal_id,
@@ -37,19 +33,19 @@ async def register_folder(payload: RegisterFolderPayload):
                 "OBJECT_ID": fid
             })
             if attach_resp.status_code == 200:
-                attached.append(fid)
+                attach_id = attach_resp.json().get("result")
+                if attach_id:
+                    attached_ids.append(str(attach_id))
 
-        logger.info(f"\u2705 Прикреплено файлов: {len(attached)}")
+        logger.info(f"📎 Прикреплено через attachedObject: {attached_ids}")
 
-        # Обновляем сделку
-        update = await client.post(f"{BITRIX_WEBHOOK}/crm.deal.update", json={
-            "id": deal_id,
-            "fields": {
-                FIELD_CODE: attached
-            }
-        })
+        if attached_ids:
+            update_resp = await client.post(f"{BITRIX_WEBHOOK}/crm.deal.update", json={
+                "id": deal_id,
+                "fields": {
+                    FIELD_CODE: attached_ids
+                }
+            })
+            logger.debug(f"📤 Ответ от Bitrix: {update_resp.status_code} — {update_resp.text}")
 
-        logger.debug(f"\U0001F4E4 Bitrix response {update.status_code}: {update.text}")
-
-    logger.info(f"\u2705 Файлы успешно прикреплены к сделке {deal_id}")
-    return {"status": "ok", "files_attached": len(attached)}
+    return {"status": "ok", "attached": attached_ids}
