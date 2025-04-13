@@ -11,8 +11,6 @@ load_dotenv()
 
 app = FastAPI()
 
-BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
-
 
 class FolderPayload(BaseModel):
     deal_id: int
@@ -23,9 +21,9 @@ class FolderPayload(BaseModel):
 async def register_folder(payload: FolderPayload):
     deal_id = payload.deal_id
     folder_id = payload.folder_id
-    logger.info(f"\U0001F4E5 Получен вебхук: deal={deal_id}, folder={folder_id}")
+    logger.info(f"\U0001F4E5 Вебхук получен: deal={deal_id}, folder={folder_id}")
 
-    bitrix = Bitrix(BITRIX_WEBHOOK)
+    bitrix = Bitrix()
 
     # Получаем список файлов
     children = await bitrix.call("disk.folder.getchildren", {"id": folder_id})
