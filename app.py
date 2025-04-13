@@ -1,15 +1,14 @@
 import os
-import logging
-from fastapi import FastAPI, Request
+import base64
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from loguru import logger
-from dotenv import load_dotenv
-
-from utils.bitrix import Bitrix
-
-load_dotenv()
+import httpx
 
 app = FastAPI()
+
+BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
+FIELD_CODE = "UF_CRM_1740994275251"
 
 
 class FolderPayload(BaseModel):
@@ -19,38 +18,44 @@ class FolderPayload(BaseModel):
 
 @app.post("/webhook/register_folder")
 async def register_folder(payload: FolderPayload):
-    deal_id = payload.deal_id
-    folder_id = payload.folder_id
-    logger.info(f"\U0001F4E5 Вебхук получен: deal={deal_id}, folder={folder_id}")
+    try:
+        deal_id = payload.deal_id
+        folder_id = payload.folder_id
+        logger.info(f"📥 Вебхук получен: deal={deal_id}, folder={folder_id}")
 
-    bitrix = Bitrix()
+        async with httpx.AsyncClient() as client:
+            # Получаем список файлов в папке
+            resp = await client.post(f"{BITRIX_WEBHOOK}/disk.folder.getchildren", json={"id": folder_id})
+            children = resp.json().get("result", [])
+            file_list = [f for f in children if f.get("DOWNLOAD_URL")]
 
-    # Получаем список файлов
-    children = await bitrix.call("disk.folder.getchildren", {"id": folder_id})
-    file_ids = [f["ID"] for f in children.get("result", []) if f.get("ID")]
-    logger.info(f"\U0001F4CE Найдено файлов: {len(file_ids)} — {file_ids}")
+            if not file_list:
+                logger.warning("⚠️ Нет файлов для загрузки")
+                return {"status": "ok", "attached": []}
 
-    attached_ids = []
-    for fid in file_ids:
-        resp = await bitrix.call("disk.attachedObject.add", {
-            "ENTITY_TYPE": "crm_deal",
-            "ENTITY_ID": deal_id,
-            "OBJECT_ID": fid
-        })
-        if isinstance(resp, dict) and resp.get("result"):
-            attached_ids.append(resp["result"])
+            attached = []
+            for f in file_list:
+                url = f["DOWNLOAD_URL"]
+                name = f.get("NAME", "file.jpg")
+                file_resp = await client.get(url)
+                if file_resp.status_code == 200:
+                    content = base64.b64encode(file_resp.content).decode("utf-8")
+                    update = await client.post(f"{BITRIX_WEBHOOK}/crm.deal.update", json={
+                        "id": deal_id,
+                        "fields": {
+                            FIELD_CODE: {
+                                "fileData": [name, content]
+                            }
+                        }
+                    })
+                    logger.debug(f"📤 Загрузка файла {name} → {update.text}")
+                    attached.append(name)
+                else:
+                    logger.warning(f"❌ Ошибка загрузки файла {name}: {file_resp.status_code}")
 
-    # Обновляем сделку, если есть что прикрепить
-    if attached_ids:
-        update = await bitrix.call("crm.deal.update", {
-            "id": deal_id,
-            "fields": {
-                "UF_CRM_1740994275251": attached_ids
-            }
-        })
-        logger.debug(f"\U0001F4E4 Bitrix response {update}")
-        logger.info(f"✅ Файлы прикреплены: {attached_ids}")
-    else:
-        logger.warning("\u26a0\ufe0f Нет прикреплённых файлов")
+        logger.info(f"✅ Загружено файлов: {len(attached)} — {attached}")
+        return {"status": "ok", "attached": attached}
 
-    return {"status": "ok", "attached": attached_ids}
+    except Exception as e:
+        logger.exception("❌ Ошибка при обработке вебхука")
+        raise HTTPException(status_code=500, detail=str(e))
