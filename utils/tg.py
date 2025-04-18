@@ -28,12 +28,14 @@ async def send_photo_group(image_urls: list[str], address: str):
         for i, group in enumerate(chunks):
             media = []
             for idx, url in enumerate(group):
-                media.append({
+                item = {
                     "type": "photo",
                     "media": url,
-                    "caption": str(caption) if idx == 0 else None,
                     "parse_mode": "HTML"
-                })
+                }
+                if idx == 0:
+                    item["caption"] = caption
+                media.append(item)
 
             response = await client.post(
                 TELEGRAM_API,
