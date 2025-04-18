@@ -31,28 +31,28 @@ async def register_folder(payload: FolderPayload):
                 logger.warning("⚠️ Нет файлов для загрузки")
                 return {"status": "ok", "attached": []}
 
-            attached = []
+            file_data_list = []
             for f in file_list:
                 url = f["DOWNLOAD_URL"]
                 name = f.get("NAME", "file.jpg")
                 file_resp = await client.get(url)
                 if file_resp.status_code == 200:
                     content = base64.b64encode(file_resp.content).decode("utf-8")
-                    update = await client.post(f"{BITRIX_WEBHOOK}/crm.deal.update", json={
-                        "id": deal_id,
-                        "fields": {
-                            FIELD_CODE: {
-                                "fileData": [name, content]
-                            }
-                        }
-                    })
-                    logger.debug(f"📤 Загружено: {name} → {update.text}")
-                    attached.append(name)
+                    file_data_list.append({"fileData": [name, content]})
                 else:
                     logger.warning(f"❌ Ошибка скачивания {name}: {file_resp.status_code}")
 
-        logger.info(f"✅ Загружено файлов: {attached}")
-        return {"status": "ok", "attached": attached}
+            # Отправляем все файлы за один запрос
+            update = await client.post(f"{BITRIX_WEBHOOK}/crm.deal.update", json={
+                "id": deal_id,
+                "fields": {
+                    FIELD_CODE: file_data_list
+                }
+            })
+            logger.debug(f"📤 Обновление сделки → {update.text}")
+
+        logger.info(f"✅ Загружено файлов: {len(file_data_list)}")
+        return {"status": "ok", "attached": [f['fileData'][0] for f in file_data_list]}
 
     except Exception as e:
         logger.exception("❌ Ошибка при обработке запроса")
