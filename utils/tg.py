@@ -31,7 +31,7 @@ async def send_photo_group(image_urls: list[str], address: str):
                 media.append({
                     "type": "photo",
                     "media": url,
-                    "caption": caption if idx == 0 else None,
+                    "caption": str(caption) if idx == 0 else None,
                     "parse_mode": "HTML"
                 })
 
