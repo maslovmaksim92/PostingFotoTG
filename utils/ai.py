@@ -3,8 +3,7 @@ import random
 from openai import AsyncOpenAI
 from loguru import logger
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 REVIEW_LINKS = [
     "https://yandex.ru/profile/81116139636?lang=ru",
