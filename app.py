@@ -4,7 +4,7 @@ from loguru import logger
 import httpx
 import base64
 import os
-from utils.tg import send_photo
+from utils.tg import send_photo_group
 
 app = FastAPI()
 
@@ -24,11 +24,9 @@ async def register_folder(payload: FolderPayload):
         logger.info(f"📥 Вебхук получен: deal={deal_id}, folder={folder_id}")
 
         async with httpx.AsyncClient() as client:
-            # Получаем адрес сделки
             deal_resp = await client.get(f"{BITRIX_WEBHOOK}/crm.deal.get", params={"id": deal_id})
             address = deal_resp.json().get("result", {}).get(FIELD_ADDRESS, "Не указан")
 
-            # Получаем список файлов в папке
             resp = await client.post(f"{BITRIX_WEBHOOK}/disk.folder.getchildren", json={"id": folder_id})
             children = resp.json().get("result", [])
             file_list = [f for f in children if f.get("DOWNLOAD_URL")]
@@ -38,6 +36,7 @@ async def register_folder(payload: FolderPayload):
                 return {"status": "ok", "attached": []}
 
             file_data_list = []
+            image_urls = []
             attached_names = []
 
             for f in file_list:
@@ -47,12 +46,12 @@ async def register_folder(payload: FolderPayload):
                 if file_resp.status_code == 200:
                     content = base64.b64encode(file_resp.content).decode("utf-8")
                     file_data_list.append({"fileData": [name, content]})
+                    image_urls.append(url)
                     attached_names.append(name)
 
-                    # Отправляем в Telegram сразу после успешной загрузки файла
-                    await send_photo(image_url=url, address=address)
+            # Отправляем в Telegram группой
+            await send_photo_group(image_urls=image_urls, address=address)
 
-            # Отправляем все файлы за один запрос
             update = await client.post(f"{BITRIX_WEBHOOK}/crm.deal.update", json={
                 "id": deal_id,
                 "fields": {
