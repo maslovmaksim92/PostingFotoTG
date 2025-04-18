@@ -44,6 +44,8 @@ async def generate_message(address: str, date: str, name: str, team: str) -> str
         review_section = "\nЕсли вам понравилось — будем рады вашему отзыву:\n" + "\n".join(random.sample(REVIEW_LINKS, 2))
 
     prompt = PROMPT_TEMPLATE.format(address=address, date=date, name=name, team=team, review_section=review_section)
+    logger.debug(f"📨 GPT PROMPT:\n{prompt}")
+
     try:
         completion = await client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -51,7 +53,9 @@ async def generate_message(address: str, date: str, name: str, team: str) -> str
             temperature=1.1,
             max_tokens=600
         )
-        return completion.choices[0].message.content.strip()
+        message = completion.choices[0].message.content.strip()
+        logger.info(f"🧠 GPT сгенерировал: {message}")
+        return message
     except Exception as e:
         logger.error(f"GPT ошибка: {e}")
         return "\u2709️ Комментарий временно недоступен. Но мы ценим ваш труд!"
