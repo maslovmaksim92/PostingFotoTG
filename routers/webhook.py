@@ -1,29 +1,30 @@
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
 import os
 from bitrix import log_bitrix_payload
 
 router = APIRouter()
 
-class DealUpdatePayload(BaseModel):
-    event: str
-    data: dict
-    auth: dict
-
-CLEANING_DONE_STAGE_ID = "C8:FINISHED"  # Временно, пока не определим точно
+CLEANING_DONE_STAGE_ID = "C8:FINISHED"  # Временно, уточняется по логам
 APP_TOKEN = os.getenv("BITRIX_TG_WEBHOOK_ISHOD")
 
 @router.post("/webhook/deal_update")
-async def webhook_deal_update(payload: DealUpdatePayload, request: Request):
-    # Логируем всё, что прилетает
-    log_bitrix_payload(payload.dict())
+async def webhook_deal_update(request: Request):
+    try:
+        payload = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
 
-    if payload.auth.get("application_token") != APP_TOKEN:
+    log_bitrix_payload(payload)
+
+    auth = payload.get("auth", {})
+    if auth.get("application_token") != APP_TOKEN:
         raise HTTPException(status_code=403, detail="Неверный токен")
 
-    fields = payload.data.get("FIELDS", {})
+    fields = payload.get("data", {}).get("FIELDS", {})
     current_stage = fields.get("STAGE_ID")
     deal_id = fields.get("ID")
+
+    print(f"[Webhook] Пришёл webhook по сделке {deal_id}, стадия: {current_stage}")
 
     if current_stage != CLEANING_DONE_STAGE_ID:
         return {"status": "ignored", "reason": "not target stage"}
