@@ -1,18 +1,18 @@
-from config import settings
 from openai import AsyncOpenAI
+from config import settings
+from loguru import logger
 
-client = AsyncOpenAI(api_key=settings.openai_api_key)
+client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 async def generate_message(prompt: str) -> str:
-    """
-    Генерация ответа от GPT-3.5 на основе предоставленного промпта.
-    """
+    logger.info(f"[GPT REQUEST] Prompt: {prompt}")
     response = await client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "Ты — помощник, который отвечает кратко и по делу."},
-            {"role": "user", "content": prompt}
-        ]
+            {"role": "user", "content": prompt},
+        ],
     )
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    logger.info(f"[GPT RESPONSE] Content: {content}")
+    return content
