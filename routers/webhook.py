@@ -15,8 +15,12 @@ async def webhook_deal_update(request: Request):
     body_str = raw.decode("utf-8", errors="ignore")
     form_data = parse_qs(body_str)
 
-    # Логируем форму как есть
-    log_bitrix_payload({"form": form_data})
+    # Расширенное логирование
+    log_bitrix_payload({
+        "raw": body_str,
+        "form_keys": list(form_data.keys()),
+        "form_preview": {k: form_data[k][:1] for k in form_data}
+    })
 
     try:
         payload = json.loads(form_data.get("data", [None])[0])
