@@ -11,8 +11,11 @@ APP_TOKEN = os.getenv("BITRIX_TG_WEBHOOK_ISHOD")
 async def webhook_deal_update(request: Request):
     try:
         payload = await request.json()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+    except Exception:
+        # Fallback: если не JSON, читаем тело как raw
+        raw_body = await request.body()
+        log_bitrix_payload({"raw": raw_body.decode("utf-8", errors="ignore")})
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     log_bitrix_payload(payload)
 
