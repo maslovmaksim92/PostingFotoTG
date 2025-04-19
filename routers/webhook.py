@@ -21,7 +21,7 @@ async def webhook_deal_update(request: Request):
         "form_keys": list(form_data.keys()),
         "form_preview": {k: form_data[k][:1] for k in form_data},
         "data_str": form_data.get("data", [None])[0],
-        "auth_str": form_data.get("auth", [None])[0],
+        "auth_token": form_data.get("auth[application_token]", [None])[0]
     }
     log_bitrix_payload(debug_log)
 
@@ -31,14 +31,9 @@ async def webhook_deal_update(request: Request):
         print("❌ Ошибка парсинга payload:", e)
         raise HTTPException(status_code=400, detail=f"Invalid JSON in 'data': {e}")
 
-    try:
-        auth = json.loads(debug_log["auth_str"])
-    except Exception as e:
-        print("❌ Ошибка парсинга auth:", e)
-        raise HTTPException(status_code=400, detail=f"Invalid JSON in 'auth': {e}")
-
-    if auth.get("application_token") != APP_TOKEN:
-        print("❌ Токен не совпадает", auth.get("application_token"))
+    auth_token = debug_log["auth_token"]
+    if auth_token != APP_TOKEN:
+        print("❌ Токен не совпадает", auth_token)
         raise HTTPException(status_code=403, detail="Неверный токен")
 
     fields = payload.get("FIELDS", {})
