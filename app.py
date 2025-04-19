@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from loguru import logger
 
 from utils.bitrix import fetch_folder_files, download_files, update_deal_files, get_deal_info
-from utils.telegram_client import send_photos_batch
+from utils.telegram_client import send_photos_batch, send_video_to_telegram
 
 app = FastAPI()
 
@@ -23,9 +23,7 @@ async def register_folder(payload: FolderPayload):
         info = await get_deal_info(deal_id)
         logger.debug(f"📋 Инфо по сделке: {info}")
 
-        # адрес
         address = info.get("address") or f"ID сделки {deal_id}"
-        # даты и типы объединённо
         dates = [d for d in [info.get("date1"), info.get("date2")] if d]
         types = [t for t in [info.get("type1"), info.get("type2")] if t]
         cleaning_date = ", ".join(dates)
@@ -38,8 +36,14 @@ async def register_folder(payload: FolderPayload):
         file_data = await download_files(files)
         await update_deal_files(deal_id, file_data)
 
+        # Отправка фото
         photo_urls = [f.get("DOWNLOAD_URL") for f in files if f.get("DOWNLOAD_URL") and not f.get("NAME", "").lower().endswith(".mp4")]
         await send_photos_batch(photo_urls, address=address, cleaning_date=cleaning_date, cleaning_types=types)
+
+        # Отправка видео
+        video_files = [f for f in files if f.get("NAME", "").lower().endswith(".mp4")]
+        for video in video_files:
+            await send_video_to_telegram(video.get("DOWNLOAD_URL"), caption=f"🏠 Адрес: {address}")
 
         return {"status": "ok", "attached": [f['NAME'] for f in files]}
 
