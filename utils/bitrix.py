@@ -2,13 +2,13 @@ import requests
 from config import settings
 from loguru import logger
 
-BASE_URL = "https://local.67e85c29746cb1.58287098.bitrix24.ru/rest/1/zNeKebH9555gmzHvcDdCbicZ8fDkGY8vwzPxYOd3Vhfv68vgRn/"
+BASE_URL = settings.BITRIX_WEBHOOK  # теперь используется безопасный URL из .env
 
 
 def get_deal_info(deal_id: int) -> dict:
     try:
         res = requests.post(
-            f"{BASE_URL}crm.deal.get",
+            f"{BASE_URL}/crm.deal.get",
             data={"id": deal_id},
             timeout=10,
         )
@@ -29,7 +29,7 @@ def get_deal_photos(deal: dict) -> list[str]:
     for file_id in photo_ids:
         try:
             res = requests.post(
-                f"{BASE_URL}disk.file.get",
+                f"{BASE_URL}/disk.file.get",
                 data={"id": file_id},
                 timeout=10,
             )
