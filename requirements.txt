@@ -2,7 +2,9 @@ aiohttp
 python-dotenv
 openai
 pydantic
-pydantic-settings
-tgcrypto
 requests
+tgcrypto
+
+# === добавлено ===
+pydantic-settings
 loguru
