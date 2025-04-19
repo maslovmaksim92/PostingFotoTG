@@ -1,10 +1,10 @@
-aiohttp
-python-dotenv
-openai
-pydantic
-requests
-tgcrypto
+aiohttp==3.8.1
+python-dotenv==0.21.0
+openai==1.14.3
+pydantic==1.10.2
+requests==2.31.0
+tgcrypto==1.2.3
 
 # === добавлено ===
-pydantic-settings
-loguru
+pydantic-settings==2.2.1
+loguru==0.7.2
