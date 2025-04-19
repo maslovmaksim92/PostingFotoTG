@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
+from typing import Union
 from loguru import logger
 from datetime import datetime
 
@@ -11,16 +12,21 @@ app = FastAPI()
 
 
 class FolderPayload(BaseModel):
-    deal_id: int
-    folder_id: int
+    deal_id: Union[int, str]
+    folder_id: Union[int, str]
 
 
 @app.post("/webhook/register_folder")
 async def register_folder(payload: FolderPayload):
     try:
-        deal_id = payload.deal_id
-        folder_id = payload.folder_id
-        logger.info(f"📥 Вебхук получен: deal={deal_id}, folder={folder_id}")
+        logger.info(f"📥 Получен запрос: deal={payload.deal_id}, folder={payload.folder_id}")
+
+        if not str(payload.folder_id).isdigit():
+            logger.warning(f"❌ Некорректный folder_id: {payload.folder_id}")
+            return {"status": "error", "reason": "folder_id должен быть числом"}
+
+        deal_id = int(payload.deal_id)
+        folder_id = int(payload.folder_id)
 
         info = await get_deal_info(deal_id)
         logger.debug(f"📋 Инфо по сделке: {info}")
