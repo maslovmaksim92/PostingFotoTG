@@ -24,11 +24,11 @@ async def webhook_deal_update(request: Request):
 
     try:
         payload = json.loads(form_data.get("data", [None])[0])
+        auth = json.loads(form_data.get("auth", [None])[0])
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid data field: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid Bitrix payload format: {e}")
 
-    auth_token = form_data.get("auth[application_token]", [None])[0]
-    if auth_token != APP_TOKEN:
+    if auth.get("application_token") != APP_TOKEN:
         raise HTTPException(status_code=403, detail="Неверный токен")
 
     fields = payload.get("FIELDS", {})
