@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = Field(alias="TG_GITHUB_BOT")
     telegram_chat_id: str = Field(alias="TG_CHAT_ID")
-    openai_api_key: str
+    openai_api_key: str = Field(alias="OPENAI_API_KEY")
     bitrix_deal_update_url: str
 
     model_config = SettingsConfigDict(
