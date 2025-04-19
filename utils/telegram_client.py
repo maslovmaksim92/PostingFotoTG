@@ -13,8 +13,8 @@ SEND_VIDEO_API = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendVideo"
 
 def build_fallback_text(address: str) -> str:
     return (
-        f"\U0001F9F9 Уборка завершена\n"
-        f"\U0001F3E0 Адрес: {address}\n"
+        f"*Уборка завершена*\n"
+        f"_Адрес_: `{address}`\n"
         f"📣 Благодарим за ваш труд и заботу о доме!"
     )
 
@@ -29,16 +29,16 @@ async def send_photo_to_telegram(image_url: str, address: str, cleaning_date: st
         gpt_text = build_fallback_text(address)
 
     text = (
-        f"\U0001F9F9 Уборка подъездов завершена\n"
-        f"\U0001F3E0 Адрес: {address}\n\n"
+        f"*Уборка подъездов завершена*\n"
+        f"_Адрес_: `{address}`\n\n"
         f"{gpt_text}"
     )
-    logger.info(f"\U0001F4F7 Отправка 1 фото в Telegram: {image_url}")
+    logger.info(f"📷 Отправка 1 фото в Telegram: {image_url}")
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
             SEND_PHOTO_API,
-            data={"chat_id": TG_CHAT_ID, "caption": text, "photo": image_url, "parse_mode": "HTML"},
+            data={"chat_id": TG_CHAT_ID, "caption": text, "photo": image_url, "parse_mode": "Markdown"},
         )
 
     if response.status_code != 200:
@@ -60,8 +60,8 @@ async def send_photos_batch(photo_urls: list[str], address: str = "", cleaning_d
         gpt_text = build_fallback_text(address)
 
     caption = (
-        f"\U0001F9F9 Уборка подъездов завершена\n"
-        f"\U0001F3E0 Адрес: {address}\n\n"
+        f"*Уборка подъездов завершена*\n"
+        f"_Адрес_: `{address}`\n\n"
         f"{gpt_text}"
     )
 
@@ -70,7 +70,7 @@ async def send_photos_batch(photo_urls: list[str], address: str = "", cleaning_d
         for i in range(0, len(photo_urls), 10):
             batch = photo_urls[i:i + 10]
             media = [
-                {"type": "photo", "media": url, **({"caption": caption, "parse_mode": "HTML"} if j == 0 else {})}
+                {"type": "photo", "media": url, **({"caption": caption, "parse_mode": "Markdown"} if j == 0 else {})}
                 for j, url in enumerate(batch)
             ]
             resp = await client.post(SEND_MEDIA_GROUP_API, json={"chat_id": TG_CHAT_ID, "media": media})
@@ -87,7 +87,7 @@ async def send_video_to_telegram(video_url: str, caption: str = "") -> None:
             "chat_id": TG_CHAT_ID,
             "video": video_url,
             "caption": caption,
-            "parse_mode": "HTML"
+            "parse_mode": "Markdown"
         })
         if resp.status_code != 200:
             logger.warning(f"❌ Ошибка Telegram (видео): {resp.text}")
