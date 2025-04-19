@@ -1,7 +1,9 @@
-aiohttp
-python-dotenv
-openai
-pydantic
-pydantic-settings
-tgcrypto
-requests
+fastapi==0.115.2
+requests==2.31.0
+uvicorn[standard]==0.27.1
+gunicorn==21.2.0
+python-dotenv==1.0.1
+httpx==0.27.0
+loguru==0.7.3
+openai==1.75.0
+pydantic-settings==2.2.1
