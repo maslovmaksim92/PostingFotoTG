@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     BASIC_AUTH_PASSWORD: str
 
     FILE_FIELD_ID: str
+    BITRIX_WEBHOOK: str
 
 
 settings = Settings()
