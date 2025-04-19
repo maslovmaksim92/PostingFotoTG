@@ -16,7 +16,11 @@ class Settings(BaseSettings):
     BASIC_AUTH_PASSWORD: str
     PORT: int = 10000
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="allow"  # теперь разрешены лишние переменные
+    )
 
 
 settings = Settings()
