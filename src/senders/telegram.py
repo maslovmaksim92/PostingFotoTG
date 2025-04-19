@@ -1,8 +1,7 @@
-from utils.telegram_client import send_media_group
+# 🔧 Заглушка — временно отключена отправка в Telegram
 
-# старый интерфейс
+async def send_telegram_media_group(chat_id, files):
+    print("[Mock] Отправка в Telegram отключена. Chat:", chat_id, "Files:", files)
+
 async def send_message(chat_id: str, text: str):
-    pass
-
-async def send_telegram_media_group(chat_id: str, files):
-    await send_media_group(chat_id, files)
+    print("[Mock] Сообщение в Telegram:", text)
