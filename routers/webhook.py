@@ -4,6 +4,7 @@ import json
 from urllib.parse import parse_qs
 from bitrix import log_bitrix_payload
 from services.stage_resolver import stage_resolver
+from services.deal_notifier import notify_deal_complete
 
 router = APIRouter()
 
@@ -49,4 +50,5 @@ async def webhook_deal_update(request: Request):
         return {"status": "ignored"}
 
     print(f"✅ Сделка {deal_id} перешла в 'Уборка завершена'")
+    notify_deal_complete(deal_id)  # 🔔 Отправка в Telegram
     return {"status": "processed", "deal_id": deal_id}
