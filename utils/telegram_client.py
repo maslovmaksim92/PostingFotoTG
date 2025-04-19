@@ -11,12 +11,13 @@ SEND_MEDIA_GROUP_API = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMediaGro
 SEND_VIDEO_API = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendVideo"
 
 
-async def send_photo_to_telegram(image_url: str, address: str):
-    gpt_text = await generate_gpt_text()
+async def send_photo_to_telegram(image_url: str, address: str, cleaning_date: str = "", cleaning_types: list[str] = None):
+    if cleaning_types is None:
+        cleaning_types = []
+    gpt_text = await generate_gpt_text(address, cleaning_date, cleaning_types)
     text = (
         f"\U0001F9F9 Уборка подъездов завершена\n"
-        f"\U0001F3E0 Адрес: {address}\n"
-        f"\U0001F4C5 Дата: сегодня\n\n"
+        f"\U0001F3E0 Адрес: {address}\n\n"
         f"{gpt_text}"
     )
     logger.info(f"\U0001F4F7 Отправка 1 фото в Telegram: {image_url}")
@@ -33,15 +34,16 @@ async def send_photo_to_telegram(image_url: str, address: str):
         logger.info("✅ Фото отправлено в Telegram")
 
 
-async def send_photos_batch(photo_urls: list[str], address: str = ""):
+async def send_photos_batch(photo_urls: list[str], address: str = "", cleaning_date: str = "", cleaning_types: list[str] = None):
+    if cleaning_types is None:
+        cleaning_types = []
     if not photo_urls:
         return
 
-    gpt_text = await generate_gpt_text()
+    gpt_text = await generate_gpt_text(address, cleaning_date, cleaning_types)
     caption = (
         f"\U0001F9F9 Уборка подъездов завершена\n"
-        f"\U0001F3E0 Адрес: {address}\n"
-        f"\U0001F4C5 Дата: сегодня\n\n"
+        f"\U0001F3E0 Адрес: {address}\n\n"
         f"{gpt_text}"
     )
 
@@ -60,7 +62,7 @@ async def send_photos_batch(photo_urls: list[str], address: str = ""):
                 logger.info(f"✅ Пакет {i // 10 + 1} отправлен")
 
 
-async def send_video_to_telegram(video_url: str, caption: str = ""):
+async def send_video_to_telegram(video_url: str, caption: str = "") -> None:
     logger.info(f"🎥 Отправка видео в Telegram: {video_url}")
     async with httpx.AsyncClient() as client:
         resp = await client.post(SEND_VIDEO_API, data={
