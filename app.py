@@ -17,9 +17,12 @@ class FolderPayload(BaseModel):
 
 
 @app.post("/webhook/register_folder")
-async def register_folder(payload: FolderPayload):
+async def register_folder(payload: FolderPayload, request: Request):
     try:
-        logger.info(f"📥 Получен запрос: deal={payload.deal_id}, folder={payload.folder_id}")
+        raw = await request.body()
+        logger.info(f"📨 RAW BODY: {raw.decode()} ")
+        logger.info(f"📦 PARSED PAYLOAD: {payload.dict()}")
+        logger.info(f"📊 TYPES: deal_id={type(payload.deal_id)}, folder_id={type(payload.folder_id)}")
 
         if not str(payload.folder_id).isdigit():
             logger.warning(f"❌ Некорректный folder_id: {payload.folder_id}")
