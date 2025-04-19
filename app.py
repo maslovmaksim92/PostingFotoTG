@@ -2,12 +2,10 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from loguru import logger
 from datetime import datetime
-import locale
 
 from utils.bitrix import fetch_folder_files, download_files, update_deal_files, get_deal_info
 from utils.telegram_client import send_photos_batch, send_video_to_telegram
-
-locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")  # для отображения дат на русском
+from utils.formatting import format_russian_date
 
 app = FastAPI()
 
@@ -15,14 +13,6 @@ app = FastAPI()
 class FolderPayload(BaseModel):
     deal_id: int
     folder_id: int
-
-
-def format_date_russian(date_str: str) -> str:
-    try:
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
-        return dt.strftime("%d %B %Y")
-    except Exception:
-        return date_str
 
 
 @app.post("/webhook/register_folder")
@@ -38,7 +28,7 @@ async def register_folder(payload: FolderPayload):
         address = info.get("address") or f"ID сделки {deal_id}"
         dates_raw = [d for d in [info.get("date1"), info.get("date2")] if d]
         types = [t for t in [info.get("type1"), info.get("type2")] if t]
-        formatted_dates = [format_date_russian(d) for d in dates_raw]
+        formatted_dates = [format_russian_date(datetime.strptime(d, "%Y-%m-%d").date()) for d in dates_raw]
         cleaning_date = ", ".join(formatted_dates)
 
         files = await fetch_folder_files(folder_id)
