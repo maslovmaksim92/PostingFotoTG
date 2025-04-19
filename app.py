@@ -39,7 +39,7 @@ async def register_folder(payload: FolderPayload):
         await update_deal_files(deal_id, file_data)
 
         photo_urls = [f.get("DOWNLOAD_URL") for f in files if f.get("DOWNLOAD_URL") and not f.get("NAME", "").lower().endswith(".mp4")]
-        await send_photos_batch(photo_urls, address=address)
+        await send_photos_batch(photo_urls, address=address, cleaning_date=cleaning_date, cleaning_types=types)
 
         return {"status": "ok", "attached": [f['NAME'] for f in files]}
 
