@@ -1,6 +1,7 @@
 import os
 import httpx
 from loguru import logger
+from utils.ai import generate_gpt_text
 
 TG_BOT_TOKEN = os.getenv("TG_GITHUB_BOT")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
@@ -11,12 +12,14 @@ SEND_VIDEO_API = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendVideo"
 
 
 async def send_photo_to_telegram(image_url: str, address: str):
+    gpt_text = await generate_gpt_text()
     text = (
         f"\U0001F9F9 Уборка подъездов завершена\n"
         f"\U0001F3E0 Адрес: {address}\n"
-        f"\U0001F4C5 Дата: сегодня"
+        f"\U0001F4C5 Дата: сегодня\n\n"
+        f"{gpt_text}"
     )
-    logger.info(f"\U0001F4F7 Отправка в Telegram: {image_url}")
+    logger.info(f"\U0001F4F7 Отправка 1 фото в Telegram: {image_url}")
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -24,15 +27,23 @@ async def send_photo_to_telegram(image_url: str, address: str):
             data={"chat_id": TG_CHAT_ID, "caption": text, "photo": image_url, "parse_mode": "HTML"},
         )
 
-    if not response.status_code == 200:
+    if response.status_code != 200:
         logger.warning(f"❌ Telegram error: {response.text}")
     else:
-        logger.info("✅ Сообщение отправлено в Telegram")
+        logger.info("✅ Фото отправлено в Telegram")
 
 
-async def send_photos_batch(photo_urls: list[str], caption: str = ""):
+async def send_photos_batch(photo_urls: list[str], address: str = ""):
     if not photo_urls:
         return
+
+    gpt_text = await generate_gpt_text()
+    caption = (
+        f"\U0001F9F9 Уборка подъездов завершена\n"
+        f"\U0001F3E0 Адрес: {address}\n"
+        f"\U0001F4C5 Дата: сегодня\n\n"
+        f"{gpt_text}"
+    )
 
     logger.info(f"📦 Отправка {len(photo_urls)} фото партиями")
     async with httpx.AsyncClient() as client:
@@ -46,7 +57,7 @@ async def send_photos_batch(photo_urls: list[str], caption: str = ""):
             if resp.status_code != 200:
                 logger.warning(f"❌ Ошибка Telegram: {resp.text}")
             else:
-                logger.info(f"✅ Отправлена партия {i // 10 + 1}")
+                logger.info(f"✅ Пакет {i // 10 + 1} отправлен")
 
 
 async def send_video_to_telegram(video_url: str, caption: str = ""):
