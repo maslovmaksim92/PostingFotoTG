@@ -3,21 +3,19 @@ from loguru import logger
 from config import settings
 
 BASE_PROMPT = (
-    """
-    Напиши краткое, вдохновляющее сообщение от управляющей компании после завершения уборки.
-    Сообщение должно быть не длиннее 2–3 предложений. Обязательно:
-    - использовать доброжелательный тон
-    - похвалить работников
-    - завершить позитивной нотой
-    - использовать emoji
-    Пиши лаконично, но тепло. Не используй хэштеги.
-    """
+    "Сформулируй одно вдохновляющее предложение от лица управляющей компании после завершения уборки."
+    " Обязательно:
+    - доброе настроение
+    - краткость
+    - не более 1 предложения
+    - emoji
+    Без хэштегов. Без воды."
 )
 
 
 async def generate_gpt_text(address: str = "", date: str = "", types: list[str] = None) -> str:
     types = types or []
-    context = f"Уборка прошла по адресу {address}. Дата: {date}. Виды уборки: {', '.join(types)}."
+    context = f"Уборка по адресу {address}. Дата: {date}. Виды: {', '.join(types)}."
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -29,8 +27,8 @@ async def generate_gpt_text(address: str = "", date: str = "", types: list[str] 
                         {"role": "system", "content": BASE_PROMPT},
                         {"role": "user", "content": context}
                     ],
-                    "temperature": 0.9,
-                    "max_tokens": 150
+                    "temperature": 0.85,
+                    "max_tokens": 70
                 }
             )
             response.raise_for_status()
