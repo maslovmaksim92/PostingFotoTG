@@ -1,7 +1,12 @@
 from fastapi import FastAPI
-
-from utils.tg import router as telegram_router
+from loguru import logger
+from utils.ai import generate_message
 
 app = FastAPI()
 
-app.include_router(telegram_router)
+@app.get("/")
+def health_check():
+    logger.info("Health check passed")
+    return {"status": "ok"}
+
+# Здесь должны быть остальные маршруты (если есть)
