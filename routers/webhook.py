@@ -24,6 +24,9 @@ async def webhook_deal_update(request: Request):
     }
     log_bitrix_payload(debug_log)
 
+    if debug_log["data_str"] is None:
+        raise HTTPException(status_code=400, detail="Missing 'data' field in Bitrix webhook")
+
     try:
         payload = json.loads(debug_log["data_str"])
     except Exception as e:
