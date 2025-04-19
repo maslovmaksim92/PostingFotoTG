@@ -1,9 +1,13 @@
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from loguru import logger
+from datetime import datetime
+import locale
 
 from utils.bitrix import fetch_folder_files, download_files, update_deal_files, get_deal_info
 from utils.telegram_client import send_photos_batch, send_video_to_telegram
+
+locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")  # для отображения дат на русском
 
 app = FastAPI()
 
@@ -11,6 +15,14 @@ app = FastAPI()
 class FolderPayload(BaseModel):
     deal_id: int
     folder_id: int
+
+
+def format_date_russian(date_str: str) -> str:
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return dt.strftime("%d %B %Y")
+    except Exception:
+        return date_str
 
 
 @app.post("/webhook/register_folder")
@@ -24,9 +36,10 @@ async def register_folder(payload: FolderPayload):
         logger.debug(f"📋 Инфо по сделке: {info}")
 
         address = info.get("address") or f"ID сделки {deal_id}"
-        dates = [d for d in [info.get("date1"), info.get("date2")] if d]
+        dates_raw = [d for d in [info.get("date1"), info.get("date2")] if d]
         types = [t for t in [info.get("type1"), info.get("type2")] if t]
-        cleaning_date = ", ".join(dates)
+        formatted_dates = [format_date_russian(d) for d in dates_raw]
+        cleaning_date = ", ".join(formatted_dates)
 
         files = await fetch_folder_files(folder_id)
         if not files:
@@ -36,11 +49,9 @@ async def register_folder(payload: FolderPayload):
         file_data = await download_files(files)
         await update_deal_files(deal_id, file_data)
 
-        # Отправка фото
         photo_urls = [f.get("DOWNLOAD_URL") for f in files if f.get("DOWNLOAD_URL") and not f.get("NAME", "").lower().endswith(".mp4")]
         await send_photos_batch(photo_urls, address=address, cleaning_date=cleaning_date, cleaning_types=types)
 
-        # Отправка видео
         video_files = [f for f in files if f.get("NAME", "").lower().endswith(".mp4")]
         for video in video_files:
             await send_video_to_telegram(video.get("DOWNLOAD_URL"), caption=f"🏠 Адрес: {address}")
