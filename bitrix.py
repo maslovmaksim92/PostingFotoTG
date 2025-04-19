@@ -1,5 +1,8 @@
 import json
 from datetime import datetime
+from pathlib import Path
+
+Path("logs").mkdir(exist_ok=True)
 
 def log_bitrix_payload(payload: dict):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
