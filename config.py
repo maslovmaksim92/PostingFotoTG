@@ -1,26 +1,13 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
-from dotenv import load_dotenv
-import os
-
-# Принудительная загрузка .env
-load_dotenv()
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Глобальные настройки проекта"""
+    OPENAI_API_KEY: str
 
-    telegram_bot_token: str = Field(alias="TG_GITHUB_BOT")
-    telegram_chat_id: str = Field(alias="TG_CHAT_ID")
-    openai_api_key: str = Field(alias="OPENAI_API_KEY")
-    bitrix_deal_update_url: str
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-        populate_by_name=True
-    )
+    model_config = {
+        "env_file": ".env",
+        "extra": "ignore"
+    }
 
 
 settings = Settings()
