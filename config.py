@@ -1,11 +1,17 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    OPENAI_API_KEY: str
+    """Глобальные настройки проекта"""
 
-    class Config:
-        env_file = ".env"
+    telegram_bot_token: str
+    telegram_chat_id: str
+    openai_api_key: str
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8"
+    )
 
 
 settings = Settings()
