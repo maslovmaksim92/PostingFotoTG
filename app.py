@@ -5,6 +5,9 @@ import httpx
 import base64
 import os
 from utils.tg import send_photo_group
+from utils.ai import generate_message
+from datetime import datetime
+import pytz
 
 app = FastAPI()
 
@@ -25,7 +28,10 @@ async def register_folder(payload: FolderPayload):
 
         async with httpx.AsyncClient() as client:
             deal_resp = await client.get(f"{BITRIX_WEBHOOK}/crm.deal.get", params={"id": deal_id})
-            address = deal_resp.json().get("result", {}).get(FIELD_ADDRESS, "Не указан")
+            deal_data = deal_resp.json().get("result", {})
+            address = deal_data.get(FIELD_ADDRESS, "Не указан")
+            name = deal_data.get("ASSIGNED_BY", {}).get("NAME", "") + " " + deal_data.get("ASSIGNED_BY", {}).get("LAST_NAME", "")
+            team = deal_data.get("UF_CRM_1740336974", "?")
 
             resp = await client.post(f"{BITRIX_WEBHOOK}/disk.folder.getchildren", json={"id": folder_id})
             children = resp.json().get("result", [])
@@ -41,16 +47,13 @@ async def register_folder(payload: FolderPayload):
 
             for f in file_list:
                 url = f["DOWNLOAD_URL"]
-                name = f.get("NAME", "file.jpg")
+                name_file = f.get("NAME", "file.jpg")
                 file_resp = await client.get(url)
                 if file_resp.status_code == 200:
                     content = base64.b64encode(file_resp.content).decode("utf-8")
-                    file_data_list.append({"fileData": [name, content]})
+                    file_data_list.append({"fileData": [name_file, content]})
                     image_urls.append(url)
-                    attached_names.append(name)
-
-            # Отправляем в Telegram группой
-            await send_photo_group(image_urls=image_urls, address=address)
+                    attached_names.append(name_file)
 
             update = await client.post(f"{BITRIX_WEBHOOK}/crm.deal.update", json={
                 "id": deal_id,
@@ -59,6 +62,15 @@ async def register_folder(payload: FolderPayload):
                 }
             })
             logger.debug(f"📤 Обновление сделки → {update.text}")
+
+        # ⏱ Дата в формате 19 апреля
+        msk_time = datetime.now(pytz.timezone("Europe/Moscow"))
+        date_str = msk_time.strftime("%d %B")
+
+        gpt_text = await generate_message(address=address, date=date_str, name=name, team=str(team))
+
+        # Отправка фото и текста
+        await send_photo_group(image_urls=image_urls, address=address + f"\n\n{gpt_text}")
 
         logger.info(f"✅ Загружено и отправлено файлов: {attached_names}")
         return {"status": "ok", "attached": attached_names}
