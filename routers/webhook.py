@@ -3,10 +3,10 @@ import os
 import json
 from urllib.parse import parse_qs
 from bitrix import log_bitrix_payload
+from services.stage_resolver import stage_resolver
 
 router = APIRouter()
 
-CLEANING_DONE_STAGE_ID = "C8:FINISHED"
 APP_TOKEN = os.getenv("BITRIX_TG_WEBHOOK_ISHOD")
 
 @router.post("/webhook/deal_update")
@@ -15,7 +15,6 @@ async def webhook_deal_update(request: Request):
     body_str = raw.decode("utf-8", errors="ignore")
     form_data = parse_qs(body_str)
 
-    # Расширенное логирование
     debug_log = {
         "raw": body_str,
         "form_keys": list(form_data.keys()),
@@ -40,8 +39,10 @@ async def webhook_deal_update(request: Request):
     current_stage = fields.get("STAGE_ID")
     deal_id = fields.get("ID")
 
-    print(f"[Webhook] Сделка {deal_id}, стадия: {current_stage}")
-    if current_stage != CLEANING_DONE_STAGE_ID:
+    expected_stage = stage_resolver.get_stage_id_by_name("Уборка завершена")
+
+    print(f"[Webhook] Сделка {deal_id}, стадия: {current_stage} (ожидаем: {expected_stage})")
+    if expected_stage is None or current_stage != expected_stage:
         return {"status": "ignored"}
 
     print(f"✅ Сделка {deal_id} перешла в 'Уборка завершена'")
