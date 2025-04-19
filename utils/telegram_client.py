@@ -1,53 +1,28 @@
+import os
+import httpx
 from loguru import logger
-import aiohttp
-from typing import List, Optional
 
-from config import settings
+TG_BOT_TOKEN = os.getenv("TG_GITHUB_BOT")
+TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 
-
-async def send_message(text: str) -> None:
-    """
-    Отправка текстового сообщения в Telegram-чат
-    """
-    url = f"https://api.telegram.org/bot{settings.TG_GITHUB_BOT}/sendMessage"
-    payload = {
-        "chat_id": settings.TG_CHAT_ID,
-        "text": text,
-        "parse_mode": "HTML",
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, json=payload) as response:
-            result = await response.json()
-            if not result.get("ok"):
-                logger.error(f"Telegram API error: {result}")
-            else:
-                logger.info("📤 Текстовое сообщение отправлено в Telegram")
+TELEGRAM_API = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendPhoto"
 
 
-async def send_photo(photo_urls: List[str], caption: Optional[str] = None) -> None:
-    """
-    Отправка списка фото в Telegram с необязательной подписью
-    """
-    if not photo_urls:
-        logger.warning("Пустой список фото, отправка в Telegram пропущена")
-        return
+async def send_photo_to_telegram(image_url: str, address: str):
+    text = (
+        f"\U0001F9F9 Уборка подъездов завершена\n"
+        f"\U0001F3E0 Адрес: {address}\n"
+        f"\U0001F4C5 Дата: сегодня"
+    )
+    logger.info(f"\U0001F4F7 Отправка в Telegram: {image_url}")
 
-    async with aiohttp.ClientSession() as session:
-        for idx, photo_url in enumerate(photo_urls):
-            payload = {
-                "chat_id": settings.TG_CHAT_ID,
-                "photo": photo_url,
-            }
-            if idx == 0 and caption:
-                payload["caption"] = caption
-                payload["parse_mode"] = "HTML"
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            TELEGRAM_API,
+            data={"chat_id": TG_CHAT_ID, "caption": text, "photo": image_url},
+        )
 
-            async with session.post(
-                f"https://api.telegram.org/bot{settings.TG_GITHUB_BOT}/sendPhoto",
-                data=payload,
-            ) as response:
-                result = await response.json()
-                if not result.get("ok"):
-                    logger.error(f"Telegram API photo error: {result}")
-                else:
-                    logger.info(f"📸 Фото {idx + 1}/{len(photo_urls)} успешно отправлено")
+    if not response.status_code == 200:
+        logger.warning(f"❌ Telegram error: {response.text}")
+    else:
+        logger.info("✅ Сообщение отправлено в Telegram")
