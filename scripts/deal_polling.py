@@ -2,6 +2,7 @@ import requests
 import os
 import json
 from services.stage_resolver import stage_resolver
+from services.deal_notifier import notify_deal_complete
 from pathlib import Path
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
@@ -46,7 +47,8 @@ class DealWatcher:
             prev = self.last_known.get(deal_id)
             if stage == self.stage_id_done and prev != stage:
                 print(f"✅ Обнаружен переход вручную! Сделка {deal_id} завершена.")
-                # TODO: вызвать отправку в Telegram или логику обработки
+                notify_deal_complete(deal_id)  # 🔔 Отправка в Telegram
+
             self.last_known[deal_id] = stage
 
         self._save()
