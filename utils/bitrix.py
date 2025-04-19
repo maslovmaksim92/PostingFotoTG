@@ -49,3 +49,18 @@ async def update_deal_files(deal_id: int, file_data: list[dict]) -> None:
                 }
             })
             logger.debug(f"📦 Ответ Bitrix: {resp.text}")
+
+
+async def get_deal_info(deal_id: int) -> dict:
+    url = f"{settings.BITRIX_WEBHOOK}/crm.deal.get"
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(url, json={"id": deal_id})
+        result = resp.json().get("result", {})
+
+    return {
+        "address": result.get("UF_CRM166956159956"),
+        "date1": result.get("UF_CRM1741590925181"),
+        "type1": result.get("UF_CRM174159176502"),
+        "date2": result.get("UF_CRM1741591860197"),
+        "type2": result.get("UF_CRM174159190504"),
+    }
