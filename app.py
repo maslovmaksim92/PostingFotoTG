@@ -57,3 +57,14 @@ async def register_folder(payload: FolderPayload):
 async def test_webhook(request: Request):
     data = await request.json()
     return {"status": "ok", "echo": data}
+
+
+@app.post("/webhook/debug_log")
+async def debug_log(request: Request):
+    try:
+        body = await request.json()
+        logger.info(f"🐞 DEBUG HOOK: {body}")
+        return {"status": "received", "data": body}
+    except Exception as e:
+        logger.warning(f"⚠️ DEBUG ERROR: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
