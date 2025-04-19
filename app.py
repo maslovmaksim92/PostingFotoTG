@@ -63,13 +63,13 @@ async def register_folder(payload: FolderPayload):
             })
             logger.debug(f"📤 Обновление сделки → {update.text}")
 
-        # ⏱ Дата в формате 19 апреля
+        # Дата в формате "19 апреля"
         msk_time = datetime.now(pytz.timezone("Europe/Moscow"))
         date_str = msk_time.strftime("%d %B")
 
         gpt_text = await generate_message(address=address, date=date_str, name=name, team=str(team))
 
-        # Отправка фото и текста
+        # Отправка группы фото с подписью (включая GPT)
         await send_photo_group(image_urls=image_urls, address=address + f"\n\n{gpt_text}")
 
         logger.info(f"✅ Загружено и отправлено файлов: {attached_names}")
