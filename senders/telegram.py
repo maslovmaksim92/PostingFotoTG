@@ -1,28 +1,28 @@
-from utils.telegram_client import send_photo, send_message
-from utils.bitrix import get_deal_photos, get_deal_info
-from utils.ai import generate_message
+from utils.telegram_client import send_message, send_photo
+from utils.bitrix import get_deal_info, get_deal_photos
+from utils.ai import generate_gpt_text
 from loguru import logger
 
 
-async def send_cleaning_report(deal_id: int):
+async def send_cleaning_report(deal_id: int) -> None:
     try:
-        photos = await get_deal_photos(deal_id)
-        deal_info = await get_deal_info(deal_id)
+        deal = get_deal_info(deal_id)
+        address = deal.get("UF_CRM_1686038818")
+        responsible = deal.get("ASSIGNED_BY_ID")
 
-        # 1. Отправляем фото + основное сообщение
-        for photo in photos:
-            await send_photo(photo)
+        photos = get_deal_photos(deal)
 
-        address = deal_info.get("address", "[адрес неизвестен]")
-        person = deal_info.get("responsible", "[ответственный не найден]")
-        await send_message(f"🧹 Уборка завершена по адресу: {address}\nОтветственный: {person}")
+        message = f"\n<b>🧹 Уборка подъездов завершена</b>\n"
+        if address:
+            message += f"<b>📍 Адрес:</b> {address}\n"
+        if responsible:
+            message += f"<b>👷 Ответственный:</b> {responsible}\n"
+        message += f"<b>📅 Дата:</b> сегодня\n\n"
 
-        # 2. Промт GPT и вдохновляющее сообщение
-        prompt = (
-            "Напиши короткое вдохновляющее сообщение. Можешь использовать стихи, байт на отзывы, мотивацию или похвалу труда уборщиков."
-        )
-        gpt_message = await generate_message(prompt)
-        await send_message(f"🤖 GPT говорит: {gpt_message}")
+        gpt_text = await generate_gpt_text()
+        message += gpt_text
+
+        await send_photo(photos, caption=message)
 
     except Exception as e:
-        logger.exception(f"Ошибка при отправке отчёта по сделке {deal_id}: {e}")
+        logger.error(f"Ошибка при отправке отчёта по сделке {deal_id}: {e}")
