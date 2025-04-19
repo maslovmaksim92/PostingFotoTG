@@ -2,8 +2,7 @@ import requests
 from config import settings
 from loguru import logger
 
-
-BASE_URL = f"https://{settings.BITRIX_CLIENT_ID}.bitrix24.ru/rest/1/{settings.BITRIX_CLIENT_SECRET}/"
+BASE_URL = "https://local.67e85c29746cb1.58287098.bitrix24.ru/rest/1/zNeKebH9555gmzHvcDdCbicZ8fDkGY8vwzPxYOd3Vhfv68vgRn/"
 
 
 def get_deal_info(deal_id: int) -> dict:
