@@ -11,11 +11,7 @@ class Settings(BaseSettings):
     BASIC_AUTH_LOGIN: str
     BASIC_AUTH_PASSWORD: str
 
-    BITRIX_CLIENT_ID: str
-    BITRIX_CLIENT_SECRET: str
-
     FILE_FIELD_ID: str
-    FOLDER_FIELD_ID: str
 
 
 settings = Settings()
