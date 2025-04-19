@@ -1,84 +1,10 @@
-from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
-from typing import Union
-from loguru import logger
-from datetime import datetime
-
-from utils.bitrix import fetch_folder_files, download_files, update_deal_files, get_deal_info
-from utils.telegram_client import send_photos_batch, send_video_to_telegram
-from utils.formatting import format_russian_date
+from fastapi import FastAPI
+from routers import webhook
 
 app = FastAPI()
 
-
 @app.get("/")
-async def root():
+async def health():
     return {"status": "ok"}
 
-
-class FolderPayload(BaseModel):
-    deal_id: Union[int, str]
-    folder_id: Union[int, str]
-
-
-@app.post("/webhook/register_folder")
-async def register_folder(payload: FolderPayload, request: Request):
-    try:
-        raw = await request.body()
-        logger.info(f"📨 RAW BODY: {raw.decode()} ")
-        logger.info(f"📦 PARSED PAYLOAD: {payload.dict()}")
-        logger.info(f"📊 TYPES: deal_id={type(payload.deal_id)}, folder_id={type(payload.folder_id)}")
-
-        if not str(payload.folder_id).isdigit():
-            logger.warning(f"❌ Некорректный folder_id: {payload.folder_id}")
-            return {"status": "error", "reason": "folder_id должен быть числом"}
-
-        deal_id = int(payload.deal_id)
-        folder_id = int(payload.folder_id)
-
-        info = await get_deal_info(deal_id)
-        logger.debug(f"📋 Инфо по сделке: {info}")
-
-        address = info.get("address") or f"ID сделки {deal_id}"
-        dates_raw = [d for d in [info.get("date1"), info.get("date2")] if d]
-        types = [t for t in [info.get("type1"), info.get("type2")] if t]
-        formatted_dates = [format_russian_date(datetime.strptime(d, "%Y-%m-%d").date()) for d in dates_raw]
-        cleaning_date = ", ".join(formatted_dates)
-
-        files = await fetch_folder_files(folder_id)
-        if not files:
-            logger.warning("⚠️ Нет файлов в папке")
-            return {"status": "ok", "attached": []}
-
-        file_data = await download_files(files)
-        await update_deal_files(deal_id, file_data)
-
-        photo_urls = [f.get("DOWNLOAD_URL") for f in files if f.get("DOWNLOAD_URL") and not f.get("NAME", "").lower().endswith(".mp4")]
-        await send_photos_batch(photo_urls, address=address, cleaning_date=cleaning_date, cleaning_types=types)
-
-        video_files = [f for f in files if f.get("NAME", "").lower().endswith(".mp4")]
-        for video in video_files:
-            await send_video_to_telegram(video.get("DOWNLOAD_URL"), caption=f"🏠 Адрес: {address}")
-
-        return {"status": "ok", "attached": [f['NAME'] for f in files]}
-
-    except Exception as e:
-        logger.exception("❌ Ошибка при обработке запроса")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/webhook/test")
-async def test_webhook(request: Request):
-    data = await request.json()
-    return {"status": "ok", "echo": data}
-
-
-@app.post("/webhook/debug_log")
-async def debug_log(request: Request):
-    try:
-        body = await request.json()
-        logger.info(f"🐞 DEBUG HOOK: {body}")
-        return {"status": "received", "data": body}
-    except Exception as e:
-        logger.warning(f"⚠️ DEBUG ERROR: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+app.include_router(webhook.router)
