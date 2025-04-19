@@ -11,6 +11,11 @@ from utils.formatting import format_russian_date
 app = FastAPI()
 
 
+@app.get("/")
+async def root():
+    return {"status": "ok"}
+
+
 class FolderPayload(BaseModel):
     deal_id: Union[int, str]
     folder_id: Union[int, str]
