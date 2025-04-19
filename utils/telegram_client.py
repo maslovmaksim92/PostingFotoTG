@@ -11,10 +11,23 @@ SEND_MEDIA_GROUP_API = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMediaGro
 SEND_VIDEO_API = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendVideo"
 
 
+def build_fallback_text(address: str) -> str:
+    return (
+        f"\U0001F9F9 Уборка завершена\n"
+        f"\U0001F3E0 Адрес: {address}\n"
+        f"📣 Благодарим за ваш труд и заботу о доме!"
+    )
+
+
 async def send_photo_to_telegram(image_url: str, address: str, cleaning_date: str = "", cleaning_types: list[str] = None):
     if cleaning_types is None:
         cleaning_types = []
-    gpt_text = await generate_gpt_text(address, cleaning_date, cleaning_types)
+    try:
+        gpt_text = await generate_gpt_text(address, cleaning_date, cleaning_types)
+    except Exception as e:
+        logger.warning(f"⚠️ GPT недоступен: {e}, используем fallback-текст")
+        gpt_text = build_fallback_text(address)
+
     text = (
         f"\U0001F9F9 Уборка подъездов завершена\n"
         f"\U0001F3E0 Адрес: {address}\n\n"
@@ -40,7 +53,12 @@ async def send_photos_batch(photo_urls: list[str], address: str = "", cleaning_d
     if not photo_urls:
         return
 
-    gpt_text = await generate_gpt_text(address, cleaning_date, cleaning_types)
+    try:
+        gpt_text = await generate_gpt_text(address, cleaning_date, cleaning_types)
+    except Exception as e:
+        logger.warning(f"⚠️ GPT недоступен: {e}, используем fallback-текст")
+        gpt_text = build_fallback_text(address)
+
     caption = (
         f"\U0001F9F9 Уборка подъездов завершена\n"
         f"\U0001F3E0 Адрес: {address}\n\n"
