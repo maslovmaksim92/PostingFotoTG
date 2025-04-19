@@ -11,6 +11,7 @@ async def fetch_folder_files(folder_id: int) -> list[dict]:
     async with httpx.AsyncClient() as client:
         resp = await client.post(url, json={"id": folder_id})
         files = resp.json().get("result", [])
+        logger.info(f"🔎 Найдено файлов: {len(files)}")
         return [f for f in files if f.get("DOWNLOAD_URL")]
 
 
@@ -34,13 +35,17 @@ async def download_files(file_list: list[dict]) -> list[dict]:
 
 
 async def update_deal_files(deal_id: int, file_data: list[dict]) -> None:
-    logger.info(f"📤 Обновление сделки {deal_id} с {len(file_data)} файлами")
+    logger.info(f"📤 Обновление сделки {deal_id}, файлов: {len(file_data)}")
     url = f"{settings.BITRIX_WEBHOOK}/crm.deal.update"
+
+    chunks = [file_data[i:i+50] for i in range(0, len(file_data), 50)]
     async with httpx.AsyncClient() as client:
-        resp = await client.post(url, json={
-            "id": deal_id,
-            "fields": {
-                settings.FILE_FIELD_ID: file_data
-            }
-        })
-        logger.debug(f"📦 Ответ Bitrix: {resp.text}")
+        for idx, chunk in enumerate(chunks):
+            logger.info(f"📦 Пакет {idx+1}/{len(chunks)}: {len(chunk)} файлов")
+            resp = await client.post(url, json={
+                "id": deal_id,
+                "fields": {
+                    settings.FILE_FIELD_ID: chunk
+                }
+            })
+            logger.debug(f"📦 Ответ Bitrix: {resp.text}")
