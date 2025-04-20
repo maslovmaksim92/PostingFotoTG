@@ -39,14 +39,16 @@ async def deal_update(request: Request):
             logger.warning("⚠️ Нет ID сделки в payload")
             return {"status": "no deal id"}
 
-        # Запросим сделку и найдём folder_id
+        # Запросим поля сделки
         deal = await get_deal_fields(deal_id)
+        logger.debug(f"📋 Все поля сделки {deal_id}: {deal}")
+
         folder_id = deal.get("UF_CRM_1686038818")
         if not folder_id:
             logger.warning(f"⚠️ Нет папки в сделке {deal_id}")
             return {"status": "no folder"}
 
-        logger.info(f"📬 Получено из update: deal_id={deal_id}, folder_id={folder_id}")
+        logger.info(f"📬 Из deal_update: deal_id={deal_id}, folder_id={folder_id}")
         await send_report(deal_id, folder_id)
         return {"status": "ok"}
 
