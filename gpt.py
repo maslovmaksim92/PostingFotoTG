@@ -1,22 +1,30 @@
-import os
 import openai
+from config import OPENAI_API_KEY
+from bitrix import get_address_from_deal
 from loguru import logger
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-FALLBACK_TEXT = "Уборка завершена. Спасибо за чистоту 🧹"
+openai.api_key = OPENAI_API_KEY
 
 
-def generate_text(prompt: str = "Напиши вдохновляющий текст об уборке с bait на отзыв") -> str:
+async def generate_caption(deal_id: int) -> str:
     try:
-        response = openai.ChatCompletion.create(
+        address = await get_address_from_deal(deal_id)
+        prompt = f"""
+Вы — бот компании по уборке подъездов. Напишите короткий вдохновляющий текст к фотоотчёту об уборке. 
+Адрес: {address}
+Упомяните чистоту, благодарность и намёк на социальную ответственность. Добавьте эмодзи.
+"""
+        
+        response = await openai.ChatCompletion.acreate(
             model="gpt-3.5-turbo",
             temperature=0.9,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+            messages=[{"role": "user", "content": prompt}]
         )
-        return response.choices[0].message.content.strip()
+
+        text = response.choices[0].message.content.strip()
+        logger.info("🧠 GPT сгенерировал текст")
+        return text
+
     except Exception as e:
-        logger.error(f"**Ошибка GPT**: {e}")
-        return FALLBACK_TEXT
+        logger.warning(f"⚠️ Ошибка генерации текста: {e}")
+        return ""
