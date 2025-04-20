@@ -3,8 +3,12 @@ from loguru import logger
 from services import send_report
 from bitrix import get_deal_fields
 from urllib.parse import parse_qs
+import time
 
 router = APIRouter()
+
+last_sent = {}  # {deal_id: timestamp}
+ANTI_SPAM_WINDOW = 30  # seconds
 
 @router.post("/webhook/register_folder")
 async def register_folder(request: Request):
@@ -38,6 +42,13 @@ async def deal_update(request: Request):
         if not deal_id:
             logger.warning("⚠️ Нет ID сделки в payload")
             return {"status": "no deal id"}
+
+        # Антиспам по времени
+        now = time.time()
+        if deal_id in last_sent and now - last_sent[deal_id] < ANTI_SPAM_WINDOW:
+            logger.warning(f"⏳ Повторный вызов для {deal_id} — пропускаем")
+            return {"status": "skipped"}
+        last_sent[deal_id] = now
 
         deal = await get_deal_fields(deal_id)
         logger.debug(f"📋 Все поля сделки {deal_id}: {deal}")
