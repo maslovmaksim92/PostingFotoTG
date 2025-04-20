@@ -6,7 +6,6 @@ import time
 from urllib.parse import parse_qs
 
 router = APIRouter()
-
 last_sent = {}
 
 @router.post("/webhook/register_folder")
@@ -18,7 +17,7 @@ async def register_folder(payload: dict):
         return JSONResponse(content={"error": "Missing deal_id or folder_id"}, status_code=400)
 
     logger.info(f"📩 Вебхук получен вручную: deal_id={deal_id}, folder_id={folder_id}")
-    send_report(deal_id, folder_id)
+    await send_report(deal_id, folder_id)
     return {"status": "ok"}
 
 @router.post("/webhook/deal_update")
