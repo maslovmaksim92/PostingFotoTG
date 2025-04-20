@@ -29,16 +29,10 @@ async def send_report(deal_id: int, folder_id: int):
             logger.error(f"❌ Ошибка загрузки файла {file['name']}: {e}")
 
     if not media_group:
-        logger.warning(f"⚠️ Не удалось собрать ни одного файла для Telegram")
+        logger.warning(f"⚠️ Не удалось собрать ни одного файла")
         return
 
-    caption = await generate_caption(deal_id)
-    if not caption:
-        caption = fallback_text()
-
-    await send_media_group(media_group, caption)
-
-    # 🔁 Создаём новые BytesIO перед attach в Bitrix
+    # Сначала прикрепим к сделке
     raw_files = [f["file"].getvalue() for f in media_group]
     bitrix_ready = [
         {"file": io.BytesIO(content), "filename": f["filename"]}
@@ -46,4 +40,11 @@ async def send_report(deal_id: int, folder_id: int):
     ]
     await attach_media_to_deal(deal_id, bitrix_ready)
 
-    logger.info(f"✅ Отчёт по сделке {deal_id} успешно отправлен в Telegram и прикреплён в Bitrix")
+    # Только потом отправим в Telegram
+    caption = await generate_caption(deal_id)
+    if not caption:
+        caption = fallback_text()
+
+    await send_media_group(media_group, caption)
+
+    logger.info(f"✅ Отчёт по сделке {deal_id} отправлен и прикреплён")
