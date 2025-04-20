@@ -14,11 +14,14 @@ async def generate_caption(deal_id: int) -> str:
 Адрес: {address}
 Упомяните чистоту, благодарность и намёк на социальную ответственность. Добавьте эмодзи.
 """
-        
+
         response = await openai.ChatCompletion.acreate(
             model="gpt-3.5-turbo",
             temperature=0.9,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[
+                {"role": "system", "content": "Ты вдохновляющий помощник по уборке."},
+                {"role": "user", "content": prompt}
+            ]
         )
 
         text = response.choices[0].message.content.strip()
