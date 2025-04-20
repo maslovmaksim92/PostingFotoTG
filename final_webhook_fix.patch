@@ -1,0 +1,65 @@
+diff --git a/webhook.py b/webhook.py
+index abcdef1..1234567 100644
+--- a/webhook.py
++++ b/webhook.py
+@@ -1,6 +1,8 @@
+ from fastapi import APIRouter, Request
+ from services import process_deal_report
+ from loguru import logger
++from telegram import send_log_to_telegram
++import json
+
+ router = APIRouter()
+ 
+@@ def deal_update(request: Request):
+-    try:
+-        body = await request.body()
+-        if not body:
+-            logger.warning("❗ Пустое тело запроса от Bitrix")
+-            return {"status": "error", "reason": "empty body"}
+-        payload = await request.json()
+-    except Exception as e:
+-        logger.error("❌ Невозможно распарсить JSON: {}", e)
+-        return {"status": "error", "reason": "invalid JSON"}
+-
+-    deal = payload.get("deal", {})
+-    deal_id = deal.get("ID")
+-    folder_id = deal.get("UF_CRM_1686038818")
+-    stage_id = deal.get("STAGE_ID")
+-
+-    if stage_id != "CLEAN_DONE":
+-        logger.info(f"⏭ Пропущено: стадия {stage_id} ≠ 'CLEAN_DONE'")
+-        return {"status": "skipped", "reason": "wrong stage"}
+-
+-    if not deal_id or not folder_id:
+-        logger.warning("❗ Нет deal_id или folder_id в webhook")
+-        return {"status": "skip", "reason": "missing data"}
+-
+-    process_deal_report(int(deal_id), int(folder_id))
+-    return {"status": "ok"}
++    try:
++        body_bytes = await request.body()
++        if not body_bytes or not body_bytes.strip():
++            logger.warning("❗ Пустое тело запроса от Bitrix")
++            return {"status": "error", "reason": "empty body"}
++        payload = json.loads(body_bytes)
++    except Exception as e:
++        logger.error("❌ Невозможно распарсить JSON: {}", e)
++        return {"status": "error", "reason": "invalid JSON"}
++
++    deal = payload.get("deal", {})
++    deal_id = deal.get("ID")
++    folder_id = deal.get("UF_CRM_1686038818")
++    stage_id = deal.get("STAGE_ID")
++
++    if stage_id != "CLEAN_DONE":
++        logger.info("⏭ Пропущено: стадия {} ≠ 'CLEAN_DONE'", stage_id)
++        return {"status": "skipped", "reason": "wrong stage"}
++
++    if not deal_id or not folder_id:
++        logger.warning("❗ Нет deal_id или folder_id в webhook")
++        return {"status": "skip", "reason": "missing data"}
++
++    process_deal_report(int(deal_id), int(folder_id))
++    send_log_to_telegram("✅ Отчёт по сделке *{}* успешно отправлен.".format(deal_id))
++    return {"status": "ok"}
