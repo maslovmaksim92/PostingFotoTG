@@ -18,13 +18,16 @@ async def send_report(deal_id: int, folder_id: int):
 
     media_group = []
     for file in files:
+        if not file.get("url"):
+            continue
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(file["url"])
                 response.raise_for_status()
                 media_group.append({
                     "file": io.BytesIO(response.content),
-                    "filename": file["name"]
+                    "filename": file["name"],
+                    "id": file.get("id")  # сохраняем ID
                 })
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки файла {file['name']}: {e}")
@@ -33,12 +36,7 @@ async def send_report(deal_id: int, folder_id: int):
         logger.warning(f"⚠️ Не удалось собрать ни одного файла")
         return
 
-    raw_files = [f["file"].getvalue() for f in media_group]
-    bitrix_ready = [
-        {"file": io.BytesIO(content), "filename": f["filename"]}
-        for content, f in zip(raw_files, media_group)
-    ]
-    await attach_media_to_deal(deal_id, bitrix_ready, folder_id)
+    await attach_media_to_deal(deal_id, media_group, folder_id)
 
     address = await get_address_from_deal(deal_id)
     header = f"🧹 Уборка подъездов по адресу: *{address}* завершена."
