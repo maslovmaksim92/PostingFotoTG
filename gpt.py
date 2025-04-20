@@ -1,9 +1,9 @@
-import openai
+from openai import AsyncOpenAI
 from config import OPENAI_API_KEY
 from bitrix import get_address_from_deal
 from loguru import logger
 
-openai.api_key = OPENAI_API_KEY
+client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 
 async def generate_caption(deal_id: int) -> str:
@@ -15,13 +15,13 @@ async def generate_caption(deal_id: int) -> str:
 Упомяните чистоту, благодарность и намёк на социальную ответственность. Добавьте эмодзи.
 """
 
-        response = await openai.ChatCompletion.acreate(
+        response = await client.chat.completions.create(
             model="gpt-3.5-turbo",
-            temperature=0.9,
             messages=[
                 {"role": "system", "content": "Ты вдохновляющий помощник по уборке."},
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            temperature=0.9
         )
 
         text = response.choices[0].message.content.strip()
