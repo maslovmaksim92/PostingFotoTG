@@ -38,18 +38,15 @@ async def send_report(deal_id: int, folder_id: int):
         {"file": io.BytesIO(content), "filename": f["filename"]}
         for content, f in zip(raw_files, media_group)
     ]
-    await attach_media_to_deal(deal_id, bitrix_ready)
+    await attach_media_to_deal(deal_id, bitrix_ready, folder_id)
 
-    # 📍 Адрес
     address = await get_address_from_deal(deal_id)
     header = f"🧹 Уборка подъездов по адресу: *{address}* завершена."
 
-    # 👥 Динамически получаем бригаду из сделки
     deal = await get_deal_fields(deal_id)
     brigada = deal.get("UF_CRM_1741590925181", "[не указана]")
     team_line = f"👷 Уборку провела: *{brigada}*"
 
-    # 🎣 Уникальный байтовый текст на основе времени + ID
     now = datetime.datetime.now().strftime("%H:%M")
     bait = f"💬 Спасибо {brigada} за работу в {now}! Чистота — это стиль жизни. #ЧистоВсё"
 
