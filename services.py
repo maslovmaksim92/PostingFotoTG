@@ -37,6 +37,13 @@ async def send_report(deal_id: int, folder_id: int):
         caption = fallback_text()
 
     await send_media_group(media_group, caption)
-    await attach_media_to_deal(deal_id, media_group)
+
+    # 🔁 Создаём новые BytesIO перед attach в Bitrix
+    raw_files = [f["file"].getvalue() for f in media_group]
+    bitrix_ready = [
+        {"file": io.BytesIO(content), "filename": f["filename"]}
+        for content, f in zip(raw_files, media_group)
+    ]
+    await attach_media_to_deal(deal_id, bitrix_ready)
 
     logger.info(f"✅ Отчёт по сделке {deal_id} успешно отправлен в Telegram и прикреплён в Bitrix")
