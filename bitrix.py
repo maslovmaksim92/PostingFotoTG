@@ -8,8 +8,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
-PHOTO_FIELD_CODE = "UF_CRM_1740994275251"
+PHOTO_FIELD_CODE = os.getenv("FILE_FIELD_ID") or "UF_CRM_1740994275251"
+FOLDER_FIELD_CODE = os.getenv("FOLDER_FIELD_ID") or "UF_CRM_1743273170850"
 ADDRESS_FIELD_CODE = "UF_CRM_1669561599956"
+
 
 def get_deal_fields(deal_id: int) -> Dict:
     url = f"{BITRIX_WEBHOOK}/crm.deal.get"
@@ -19,12 +21,14 @@ def get_deal_fields(deal_id: int) -> Dict:
     logger.info(f"📋 Получены поля сделки {deal_id}")
     return data.get("result", {})
 
+
 def get_address_from_deal(deal_id: int) -> str:
     fields = get_deal_fields(deal_id)
     raw = fields.get(ADDRESS_FIELD_CODE, "")
     address = raw.split("|")[0] if "|" in raw else raw
     logger.info(f"📍 Адрес сделки {deal_id}: {address}")
     return address
+
 
 def get_files_from_folder(folder_id: int) -> List[Dict]:
     url = f"{BITRIX_WEBHOOK}/disk.folder.getchildren"
@@ -44,9 +48,12 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
     logger.info(f"✅ Найдено файлов в папке {folder_id}: {len(files)}")
     return files
 
+
 def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
     logger.info(f"📎 Начинаем скачивание и прикрепление файлов к сделке {deal_id}")
     file_ids = []
+    fields = get_deal_fields(deal_id)
+    folder_id = fields.get(FOLDER_FIELD_CODE)
 
     for file in files:
         name = file["name"][:50].replace(" ", "_")
@@ -58,9 +65,9 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
             r.raise_for_status()
             b64 = base64.b64encode(r.content).decode("utf-8")
 
-            upload_url = f"{BITRIX_WEBHOOK}/disk.storage.uploadfile"
+            upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile"
             upload_resp = requests.post(upload_url, json={
-                "id": 1,
+                "id": folder_id,
                 "data": {"NAME": name, "CREATED_BY": 1},
                 "fileContent": [name, b64]
             })
@@ -75,15 +82,16 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
         except Exception as e:
             logger.error(f"❌ Ошибка при загрузке файла {name}: {e}")
 
-    update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
-    payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
-    logger.debug(f"➡️ Отправляем payload для прикрепления: {payload}")
+    if file_ids:
+        update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
+        payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
+        logger.debug(f"➡️ Отправляем payload для прикрепления: {payload}")
 
-    try:
-        resp = requests.post(update_url, json=payload)
-        resp.raise_for_status()
-        logger.info(f"📎 Успешно прикреплены файлы к сделке {deal_id}: {file_ids}")
-    except Exception as e:
-        logger.error(f"❌ Ошибка прикрепления к сделке {deal_id}: {e}")
+        try:
+            resp = requests.post(update_url, json=payload)
+            resp.raise_for_status()
+            logger.info(f"📎 Успешно прикреплены файлы к сделке {deal_id}: {file_ids}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка прикрепления к сделке {deal_id}: {e}")
 
     return file_ids
