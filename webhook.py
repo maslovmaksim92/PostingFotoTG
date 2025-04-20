@@ -21,7 +21,6 @@ async def register_folder(payload: dict):
     send_report(deal_id, folder_id)
     return {"status": "ok"}
 
-
 @router.post("/webhook/deal_update")
 async def deal_update(request: Request):
     raw_body = await request.body()
@@ -43,5 +42,5 @@ async def deal_update(request: Request):
     logger.info(f"📬 Из deal_update: deal_id={deal_id}, folder_id={folder_id}")
 
     last_sent[deal_id] = now
-    send_report(deal_id, folder_id)
+    await send_report(deal_id, folder_id)
     return {"status": "ok"}
