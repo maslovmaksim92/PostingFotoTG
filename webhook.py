@@ -19,12 +19,13 @@ async def register_folder(payload: dict):
 
 @router.post("/webhook/deal_update")
 async def deal_update(request: Request):
+    body_bytes = await request.body()
+    if not body_bytes or not body_bytes.strip():
+        logger.warning("❗ Пустое тело запроса от Bitrix")
+        return {"status": "error", "reason": "empty body"}
+
     try:
-        body = await request.body()
-        if not body or not body.strip():
-            logger.warning("❗ Пустое тело запроса от Bitrix")
-            return {"status": "error", "reason": "empty body"}
-        payload = json.loads(body)
+        payload = json.loads(body_bytes)
     except Exception as e:
         logger.error("❌ Невозможно распарсить JSON: {}", e)
         return {"status": "error", "reason": "invalid JSON"}
