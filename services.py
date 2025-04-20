@@ -17,8 +17,9 @@ async def send_report(deal_id: int, folder_id: int):
         return
 
     logger.info(f"📁 Получено файлов: {len(files)}. Начинаем сборку media_group и подготовку ID")
-    bitrix_group = files.copy()
+    bitrix_group = []
     media_group = []
+
     for file in files:
         if not file.get("url"):
             continue
@@ -26,10 +27,15 @@ async def send_report(deal_id: int, folder_id: int):
             async with httpx.AsyncClient() as client:
                 response = await client.get(file["url"])
                 response.raise_for_status()
+                content = io.BytesIO(response.content)
+
                 media_group.append({
-                    "file": io.BytesIO(response.content),
-                    "filename": file["name"],
-                    "id": file.get("id")
+                    "file": content,
+                    "filename": file["name"]
+                })
+                bitrix_group.append({
+                    "file": content,
+                    "filename": file["name"]
                 })
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки файла {file['name']}: {e}")
