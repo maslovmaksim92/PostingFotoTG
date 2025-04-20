@@ -1,31 +1,34 @@
-# ... (импорт и другие функции остаются без изменений)
+import httpx
+from loguru import logger
+from config import BITRIX_WEBHOOK
+import base64
+import io
 
-async def attach_media_to_deal(deal_id: int, media_group: list[dict], folder_id: int) -> None:
-    bind_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
-    field_code = "UF_CRM_1740994275251"
 
-    file_ids = [f["id"] for f in media_group if f.get("id")]
-
-    if not file_ids:
-        logger.warning(f"⚠️ Нет ID файлов для прикрепления (media_group пустой или без ID)")
-        return
+async def get_files_from_folder(folder_id: int) -> list[dict]:
+    url = f"{BITRIX_WEBHOOK}/disk.folder.getchildren"
+    payload = {"id": folder_id}
 
     try:
-        bind_payload = {
-            "id": deal_id,
-            "fields": {
-                field_code: file_ids
-            }
-        }
-        logger.debug(f"➡️ CRM PAYLOAD (getchildren): {bind_payload}")
         async with httpx.AsyncClient() as client:
-            update_resp = await client.post(bind_url, json=bind_payload)
-            update_resp.raise_for_status()
-            result = update_resp.json()
-            logger.debug(f"📨 Ответ от Bitrix: {result}")
-            if result.get("result") is True:
-                logger.info(f"📎 Файлы прикреплены к сделке {deal_id}: {file_ids}")
-            else:
-                logger.warning(f"⚠️ Bitrix не подтвердил обновление сделки {deal_id}: {result}")
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            result = response.json().get("result", [])
+
+            files = []
+            for item in result:
+                if 'ID' in item:
+                    files.append({
+                        "name": item["NAME"],
+                        "url": item.get("DOWNLOAD_URL"),
+                        "id": item["ID"]
+                    })
+            logger.info(f"✅ Найдено файлов в папке {folder_id}: {len(files)}")
+            return files
+
     except Exception as e:
-        logger.error(f"❌ Ошибка привязки файлов к сделке (getchildren): {e}")
+        logger.error(f"❌ Ошибка при получении файлов из папки {folder_id}: {e}")
+        return []
+
+
+# остальные функции (get_address_from_deal, get_deal_fields, attach_media_to_deal) уже добавлены и рабочие
