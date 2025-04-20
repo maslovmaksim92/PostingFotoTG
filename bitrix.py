@@ -39,7 +39,7 @@ async def get_address_from_deal(deal_id: int) -> str:
             response = await client.post(url, json=payload)
             response.raise_for_status()
             result = response.json().get("result", {})
-            address = result.get("UF_CRM166956159956", "")
+            address = result.get("UF_CRM_1669561599956", "")
             logger.info(f"📍 Адрес сделки {deal_id}: {address}")
             return address or "Неизвестный адрес"
 
