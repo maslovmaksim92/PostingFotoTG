@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from services import send_report
 import time
+from urllib.parse import parse_qs
 
 router = APIRouter()
 
@@ -26,8 +27,8 @@ async def deal_update(request: Request):
     raw_body = await request.body()
     logger.warning(f"🐞 [deal_update] Сырой payload: {raw_body.decode()} ")
 
-    form = await request.form()
-    deal_id = int(form.get("data[FIELDS][ID]"))
+    form = parse_qs(raw_body.decode())
+    deal_id = int(form.get("data[FIELDS][ID]", [0])[0])
 
     now = time.time()
     if deal_id in last_sent and now - last_sent[deal_id] < 30:
