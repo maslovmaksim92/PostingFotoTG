@@ -1,18 +1,30 @@
 from fastapi import APIRouter, Request
 from services import process_deal_report
 from loguru import logger
+from telegram import send_log_to_telegram
+import json
 
 router = APIRouter()
+
+
+@router.post("/webhook/register_folder")
+async def register_folder(payload: dict):
+    deal_id = payload.get("deal_id")
+    folder_id = payload.get("folder_id")
+    if not deal_id or not folder_id:
+        return {"status": "error", "message": "Missing deal_id or folder_id"}
+    process_deal_report(deal_id, folder_id)
+    return {"status": "ok"}
 
 
 @router.post("/webhook/deal_update")
 async def deal_update(request: Request):
     try:
         body = await request.body()
-        if not body:
+        if not body or not body.strip():
             logger.warning("❗ Пустое тело запроса от Bitrix")
             return {"status": "error", "reason": "empty body"}
-        payload = await request.json()
+        payload = json.loads(body)
     except Exception as e:
         logger.error("❌ Невозможно распарсить JSON: {}", e)
         return {"status": "error", "reason": "invalid JSON"}
@@ -23,7 +35,7 @@ async def deal_update(request: Request):
     stage_id = deal.get("STAGE_ID")
 
     if stage_id != "CLEAN_DONE":
-        logger.info(f"⏭ Пропущено: стадия {stage_id} ≠ 'CLEAN_DONE'")
+        logger.info("⏭ Пропущено: стадия {} ≠ 'CLEAN_DONE'", stage_id)
         return {"status": "skipped", "reason": "wrong stage"}
 
     if not deal_id or not folder_id:
@@ -31,31 +43,7 @@ async def deal_update(request: Request):
         return {"status": "skip", "reason": "missing data"}
 
     process_deal_report(int(deal_id), int(folder_id))
-    return {"status": "ok"}
-
-
-
-@router.post("/webhook/deal_update")
-async def deal_update(request: Request):
-    try:
-        body = await request.body()
-        if not body:
-            logger.warning("❗ Пустое тело запроса от Bitrix")
-            return {"status": "error", "reason": "empty body"}
-        payload = await request.json()
-    except Exception as e:
-        logger.error("❌ Невозможно распарсить JSON: {}", e)
-        return {"status": "error", "reason": "invalid JSON"}
-
-    deal = payload.get("deal", {})
-    deal_id = deal.get("ID")
-    folder_id = deal.get("UF_CRM_1686038818")
-
-    if not deal_id or not folder_id:
-        logger.warning("❗ Нет deal_id или folder_id в webhook")
-        return {"status": "skip", "reason": "missing data"}
-
-    process_deal_report(int(deal_id), int(folder_id))
+    send_log_to_telegram("✅ Отчёт по сделке *{}* успешно отправлен.".format(deal_id))
     return {"status": "ok"}
 
 
