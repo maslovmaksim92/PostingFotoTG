@@ -1,67 +1,46 @@
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from loguru import logger
 from services import send_report
-from bitrix import get_deal_fields
-from urllib.parse import parse_qs
 import time
 
 router = APIRouter()
 
-last_sent = {}  # {deal_id: timestamp}
-ANTI_SPAM_WINDOW = 30  # seconds
+last_sent = {}
 
 @router.post("/webhook/register_folder")
-async def register_folder(request: Request):
-    try:
-        data = await request.json()
-        deal_id = data.get("deal_id")
-        folder_id = data.get("folder_id")
+async def register_folder(payload: dict):
+    deal_id = payload.get("deal_id")
+    folder_id = payload.get("folder_id")
 
-        if not deal_id or not folder_id:
-            logger.warning(f"❌ Не хватает данных в webhook: {data}")
-            return {"status": "error", "message": "Missing deal_id or folder_id"}
+    if not deal_id or not folder_id:
+        return JSONResponse(content={"error": "Missing deal_id or folder_id"}, status_code=400)
 
-        logger.info(f"📬 Вебхук получен: deal_id={deal_id}, folder_id={folder_id}")
-        await send_report(deal_id, folder_id)
-        return {"status": "ok"}
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка обработки webhook: {e}")
-        return {"status": "error", "message": str(e)}
+    logger.info(f"📩 Вебхук получен вручную: deal_id={deal_id}, folder_id={folder_id}")
+    send_report(deal_id, folder_id)
+    return {"status": "ok"}
 
 
 @router.post("/webhook/deal_update")
 async def deal_update(request: Request):
-    try:
-        body_bytes = await request.body()
-        raw = body_bytes.decode()
-        logger.warning(f"🐞 [deal_update] Сырой payload: {raw}")
+    raw_body = await request.body()
+    logger.warning(f"🐞 [deal_update] Сырой payload: {raw_body.decode()} ")
 
-        form = parse_qs(raw)
-        deal_id = int(form.get("data[FIELDS][ID]", [0])[0])
-        if not deal_id:
-            logger.warning("⚠️ Нет ID сделки в payload")
-            return {"status": "no deal id"}
+    form = await request.form()
+    deal_id = int(form.get("data[FIELDS][ID]"))
 
-        # Антиспам по времени
-        now = time.time()
-        if deal_id in last_sent and now - last_sent[deal_id] < ANTI_SPAM_WINDOW:
-            logger.warning(f"⏳ Повторный вызов для {deal_id} — пропускаем")
-            return {"status": "skipped"}
-        last_sent[deal_id] = now
+    now = time.time()
+    if deal_id in last_sent and now - last_sent[deal_id] < 30:
+        logger.warning(f"⏳ Повторный вызов для {deal_id} — пропускаем")
+        return {"status": "skipped"}
 
-        deal = await get_deal_fields(deal_id)
-        logger.debug(f"📋 Все поля сделки {deal_id}: {deal}")
+    from bitrix import get_deal_fields
+    fields = get_deal_fields(deal_id)
+    logger.debug(f"📋 Все поля сделки {deal_id}: {fields}")
 
-        folder_id = deal.get("UF_CRM_1743273170850")
-        if not folder_id:
-            logger.warning(f"⚠️ Нет папки в поле UF_CRM_1743273170850 для сделки {deal_id}")
-            return {"status": "no folder"}
+    folder_id = fields.get("UF_CRM_1743273170850")
+    logger.info(f"📬 Из deal_update: deal_id={deal_id}, folder_id={folder_id}")
 
-        logger.info(f"📬 Из deal_update: deal_id={deal_id}, folder_id={folder_id}")
-        await send_report(deal_id, folder_id)
-        return {"status": "ok"}
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка в /deal_update: {e}")
-        return {"status": "error", "message": str(e)}
+    last_sent[deal_id] = now
+    send_report(deal_id, folder_id)
+    return {"status": "ok"}
