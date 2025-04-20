@@ -65,7 +65,7 @@ async def get_deal_fields(deal_id: int) -> dict:
         return {}
 
 
-async def attach_media_to_deal(deal_id: int, media_group: list[dict]) -> None:
+async def attach_media_to_deal(deal_id: int, media_group: list[dict], folder_id: int) -> None:
     upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile"
     bind_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
     field_code = "UF_CRM_1740994275251"
@@ -79,6 +79,7 @@ async def attach_media_to_deal(deal_id: int, media_group: list[dict]) -> None:
             filename = item["filename"]
 
             upload_payload = {
+                "id": folder_id,
                 "data": {"NAME": filename, "CREATED_BY": 1},
                 "fileContent": [filename, encoded_file]
             }
