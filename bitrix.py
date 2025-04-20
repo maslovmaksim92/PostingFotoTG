@@ -1,10 +1,32 @@
-import json
-from datetime import datetime
-from pathlib import Path
+import requests
+import os
+from loguru import logger
 
-Path("logs").mkdir(exist_ok=True)
+BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
 
-def log_bitrix_payload(payload: dict):
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    with open(f"logs/bitrix_webhook_{timestamp}.json", "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+def get_deal(deal_id: int) -> dict:
+    url = f"{BITRIX_WEBHOOK}/crm.deal.get.json?id={deal_id}"
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json().get("result", {})
+
+
+def get_files_from_folder(folder_id: int) -> list:
+    url = f"{BITRIX_WEBHOOK}/disk.folder.getchildren.json?id={folder_id}"
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json().get("result", [])
+
+
+def attach_files_to_deal(deal_id: int, file_ids: list[int]) -> None:
+    url = f"{BITRIX_WEBHOOK}/crm.deal.update.json"
+    data = {
+        "id": deal_id,
+        "fields": {
+            "UF_CRM_1740994275251": file_ids
+        }
+    }
+    response = requests.post(url, json=data)
+    response.raise_for_status()
+    logger.info(f"Файлы {file_ids} прикреплены к сделке {deal_id}")
