@@ -1,32 +1,28 @@
-import requests
-import os
+import httpx
 from loguru import logger
-
-BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
-
-
-def get_deal(deal_id: int) -> dict:
-    url = f"{BITRIX_WEBHOOK}/crm.deal.get.json?id={deal_id}"
-    response = requests.get(url)
-    response.raise_for_status()
-    return response.json().get("result", {})
+from config import BITRIX_WEBHOOK
 
 
-def get_files_from_folder(folder_id: int) -> list:
-    url = f"{BITRIX_WEBHOOK}/disk.folder.getchildren.json?id={folder_id}"
-    response = requests.get(url)
-    response.raise_for_status()
-    return response.json().get("result", [])
+async def get_files_from_folder(folder_id: int) -> list[dict]:
+    url = f"{BITRIX_WEBHOOK}/disk.folder.getchildren"
+    payload = {"id": folder_id}
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            result = response.json().get("result", [])
+            
+            files = []
+            for item in result:
+                if 'DOWNLOAD_URL' in item:
+                    files.append({
+                        "name": item["NAME"],
+                        "url": item["DOWNLOAD_URL"]
+                    })
+            logger.info(f"✅ Найдено файлов в папке {folder_id}: {len(files)}")
+            return files
 
-
-def attach_files_to_deal(deal_id: int, file_ids: list[int]) -> None:
-    url = f"{BITRIX_WEBHOOK}/crm.deal.update.json"
-    data = {
-        "id": deal_id,
-        "fields": {
-            "UF_CRM_1740994275251": file_ids
-        }
-    }
-    response = requests.post(url, json=data)
-    response.raise_for_status()
-    logger.info(f"Файлы {file_ids} прикреплены к сделке {deal_id}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при получении файлов из папки {folder_id}: {e}")
+        return []
