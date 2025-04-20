@@ -44,3 +44,20 @@ async def get_address_from_deal(deal_id: int) -> str:
     except Exception as e:
         logger.error(f"❌ Ошибка получения адреса сделки {deal_id}: {e}")
         return "Неизвестный адрес"
+
+
+async def get_deal_fields(deal_id: int) -> dict:
+    url = f"{BITRIX_WEBHOOK}/crm.deal.get"
+    payload = {"id": deal_id}
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            result = response.json().get("result", {})
+            logger.info(f"📋 Получены поля сделки {deal_id}")
+            return result
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения полей сделки {deal_id}: {e}")
+        return {}
