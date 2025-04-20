@@ -30,6 +30,24 @@ async def get_files_from_folder(folder_id: int) -> list[dict]:
         return []
 
 
+async def get_address_from_deal(deal_id: int) -> str:
+    url = f"{BITRIX_WEBHOOK}/crm.deal.get"
+    payload = {"id": deal_id}
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            result = response.json().get("result", {})
+            address = result.get("UF_CRM_1669561599956", "")
+            logger.info(f"📍 Адрес сделки {deal_id}: {address}")
+            return address or "Неизвестный адрес"
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения адреса сделки {deal_id}: {e}")
+        return "Неизвестный адрес"
+
+
 async def attach_media_to_deal(deal_id: int, media_group: list[dict], folder_id: int) -> None:
     upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile"
     bind_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
