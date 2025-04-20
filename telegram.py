@@ -1,52 +1,49 @@
-import requests
-import os
-import json
+import aiohttp
+import io
+from config import TG_CHAT_ID, TG_GITHUB_BOT
 from loguru import logger
 
-TG_TOKEN = os.getenv("TG_GITHUB_BOT")
-TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 
-
-def send_photos_group(photos: list, caption: str = ""):
-    media = []
-    files = {}
-    for i, photo in enumerate(photos):
-        media.append({
+def build_media_payload(media_group, caption=None):
+    payload = []
+    for i, item in enumerate(media_group):
+        media = {
             "type": "photo",
-            "media": f"attach://photo{i}",
-            "caption": caption if i == 0 else ""
-        })
-        files[f"photo{i}"] = photo
+            "media": f"attach://file{i}"
+        }
+        if i == 0 and caption:
+            media["caption"] = caption
+            media["parse_mode"] = "Markdown"
+        payload.append(media)
+    return payload
 
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMediaGroup"
+
+async def send_media_group(media_group: list[dict], caption: str):
+    url = f"https://api.telegram.org/bot{TG_GITHUB_BOT}/sendMediaGroup"
     data = {
         "chat_id": TG_CHAT_ID,
-        "media": json.dumps(media)
+        "media": build_media_payload(media_group, caption)
     }
-    response = requests.post(url, data=data, files=files)
-    response.raise_for_status()
-    logger.info("Фотоотчёт отправлен")
 
+    form = aiohttp.FormData()
+    form.add_field("chat_id", str(TG_CHAT_ID))
+    form.add_field("media", str(data["media"]).replace("'", '"'))
 
-def send_video(video: bytes, caption: str):
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendVideo"
-    data = {
-        "chat_id": TG_CHAT_ID,
-        "caption": caption,
-        "supports_streaming": True
-    }
-    files = {"video": ("report.mp4", video)}
-    response = requests.post(url, data=data, files=files)
-    response.raise_for_status()
-    logger.info("Видео отправлено")
+    for i, item in enumerate(media_group):
+        form.add_field(
+            f"file{i}",
+            item["file"],
+            filename=item["filename"],
+            content_type="image/jpeg"
+        )
 
-def send_log_to_telegram(text: str):
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    data = {
-        "chat_id": TG_CHAT_ID,
-        "text": text,
-        "parse_mode": "Markdown"
-    }
-    response = requests.post(url, data=data)
-    response.raise_for_status()
-    logger.debug("Лог отправлен в Telegram")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=form) as resp:
+                if resp.status == 200:
+                    logger.info("📤 Фото успешно отправлены в Telegram")
+                else:
+                    text = await resp.text()
+                    logger.error(f"❌ Ошибка при отправке в Telegram: {resp.status}, {text}")
+    except Exception as e:
+        logger.error(f"❌ Telegram ошибка: {e}")
