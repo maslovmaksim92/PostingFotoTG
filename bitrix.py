@@ -9,7 +9,6 @@ load_dotenv()
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
 PHOTO_FIELD_CODE = "UF_CRM_1740994275251"
-FOLDER_FIELD_CODE = "UF_CRM_1743273170850"
 ADDRESS_FIELD_CODE = "UF_CRM_1669561599956"
 
 
@@ -50,42 +49,48 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
 
 
 def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
-    uploaded_file_ids = []
+    logger.info(f"📎 Начинаем скачивание и прикрепление файлов к сделке {deal_id}")
+    file_ids = []
 
     for file in files:
         name = file["name"][:50].replace(" ", "_")
         url = file["download_url"]
+        logger.debug(f"⬇️ Скачиваем файл: {name} из {url}")
 
-        logger.debug(f"📤 Upload payload: {name} (size: {file.get('size', 0)} bytes)")
         try:
             r = requests.get(url)
             r.raise_for_status()
             b64 = base64.b64encode(r.content).decode("utf-8")
 
-            upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile"
+            upload_url = f"{BITRIX_WEBHOOK}/disk.storage.uploadfile"
             upload_resp = requests.post(upload_url, json={
-                "id": deal_id,
+                "id": 1,
                 "data": {"NAME": name, "CREATED_BY": 1},
                 "fileContent": [name, b64]
             })
             upload_resp.raise_for_status()
-            result = upload_resp.json().get("result", {})
-            file_id = result.get("ID")
+            upload_result = upload_resp.json().get("result", {})
+            file_id = upload_result.get("ID")
             if file_id:
-                uploaded_file_ids.append(int(file_id))
+                logger.info(f"✅ Загружен файл: {name} → ID: {file_id}")
+                file_ids.append(file_id)
             else:
-                logger.error(f"⚠️ Нет ID файла в ответе Bitrix")
+                logger.warning(f"⚠️ Не удалось получить ID файла: {name}")
         except Exception as e:
-            logger.error(f"❌ Ошибка загрузки файла в Bitrix: {e}")
+            logger.error(f"❌ Ошибка при загрузке файла {name}: {e}")
 
-    # Прикрепление к сделке
-    if uploaded_file_ids:
+    # Прикрепление всех файлов к сделке
+    if file_ids:
         update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
-        payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: uploaded_file_ids}}
-        logger.debug(f"➡️ CRM PAYLOAD (uploadfile): {payload}")
-        update_resp = requests.post(update_url, json=payload)
-        update_resp.raise_for_status()
-        logger.debug(f"✅ Ответ от Bitrix: {update_resp.json()}")
-        logger.info(f"📎 Прикреплены файлы к сделке {deal_id}: {uploaded_file_ids}")
+        payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
+        logger.debug(f"➡️ Отправляем payload для прикрепления: {payload}")
+        resp = requests.post(update_url, json=payload)
+        try:
+            resp.raise_for_status()
+            logger.info(f"📎 Успешно прикреплены файлы к сделке {deal_id}: {file_ids}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка прикрепления к сделке: {e}")
+    else:
+        logger.warning(f"⚠️ Нет файлов для прикрепления к сделке {deal_id}")
 
-    return uploaded_file_ids
+    return file_ids
