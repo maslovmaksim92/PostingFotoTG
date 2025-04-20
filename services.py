@@ -1,4 +1,4 @@
-from bitrix import get_files_from_folder
+from bitrix import get_files_from_folder, attach_media_to_deal
 from telegram import send_media_group
 from gpt import generate_caption
 from utils import fallback_text
@@ -28,9 +28,15 @@ async def send_report(deal_id: int, folder_id: int):
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки файла {file['name']}: {e}")
 
+    if not media_group:
+        logger.warning(f"⚠️ Не удалось собрать ни одного файла для Telegram")
+        return
+
     caption = await generate_caption(deal_id)
     if not caption:
         caption = fallback_text()
 
     await send_media_group(media_group, caption)
-    logger.info(f"✅ Отчёт по сделке {deal_id} успешно отправлен в Telegram")
+    await attach_media_to_deal(deal_id, media_group)
+
+    logger.info(f"✅ Отчёт по сделке {deal_id} успешно отправлен в Telegram и прикреплён в Bitrix")
