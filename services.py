@@ -1,10 +1,11 @@
-from bitrix import get_files_from_folder, attach_media_to_deal
+from bitrix import get_files_from_folder, attach_media_to_deal, get_address_from_deal
 from telegram import send_media_group
 from gpt import generate_caption
 from utils import fallback_text
 from loguru import logger
 import httpx
 import io
+import random
 
 
 async def send_report(deal_id: int, folder_id: int):
@@ -32,7 +33,7 @@ async def send_report(deal_id: int, folder_id: int):
         logger.warning(f"⚠️ Не удалось собрать ни одного файла")
         return
 
-    # Сначала прикрепим к сделке
+    # Прикрепляем к сделке
     raw_files = [f["file"].getvalue() for f in media_group]
     bitrix_ready = [
         {"file": io.BytesIO(content), "filename": f["filename"]}
@@ -40,10 +41,25 @@ async def send_report(deal_id: int, folder_id: int):
     ]
     await attach_media_to_deal(deal_id, bitrix_ready)
 
-    # Только потом отправим в Telegram
-    caption = await generate_caption(deal_id)
-    if not caption:
-        caption = fallback_text()
+    # 📍 1. Получаем адрес
+    address = await get_address_from_deal(deal_id)
+    header = f"🧹 Уборка подъездов по адресу: *{address}* завершена."
+
+    # 👥 2. Ответственный/бригада (заглушка, можно заменить)
+    brigada = "Бригада №3"
+    team_line = f"👷 Уборку провела: *{brigada}*"
+
+    # 🎣 3. Байтовый текст (рандомно из списка)
+    bait_list = [
+        "Спасибо за чистоту и уют, которые вы создаёте!",
+        "Ваш отзыв — лучшая награда 🧽",
+        "Чисто не там, где убирают, а там, где ценят!",
+        "Подъезд блестит — настроение растёт!",
+        "Вы бы видели, как мы старались! 😅"
+    ]
+    bait = random.choice(bait_list)
+
+    caption = f"{header}\n{team_line}\n\n{bait}"
 
     await send_media_group(media_group, caption)
 
