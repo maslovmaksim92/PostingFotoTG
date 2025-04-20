@@ -50,8 +50,11 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
 
 
 def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
+    from bitrix import get_deal_fields
     logger.info(f"📎 Начинаем скачивание и прикрепление файлов к сделке {deal_id}")
     file_ids = []
+
+    # Получаем ID папки из сделки
     fields = get_deal_fields(deal_id)
     folder_id = fields.get(FOLDER_FIELD_CODE)
 
@@ -63,25 +66,31 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
         try:
             r = requests.get(url)
             r.raise_for_status()
-            b64 = base64.b64encode(r.content).decode("utf-8")
+            file_bytes = r.content
 
-            upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile"
-            upload_resp = requests.post(upload_url, json={
-                "id": folder_id,
-                "data": {"NAME": name, "CREATED_BY": 1},
-                "fileContent": [name, b64]
-            })
+            upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile?attach=Y"
+            files_data = {
+                'id': (None, str(folder_id)),
+                'data[NAME]': (None, name),
+                'data[CREATED_BY]': (None, '1'),
+                'file': (name, file_bytes)
+            }
+
+            upload_resp = requests.post(upload_url, files=files_data)
             upload_resp.raise_for_status()
-            upload_result = upload_resp.json().get("result", {})
-            file_id = upload_result.get("ID")
+            result = upload_resp.json().get("result", {})
+            file_id = result.get("ID")
+
             if file_id:
                 logger.info(f"✅ Загружен файл: {name} → ID: {file_id}")
                 file_ids.append(file_id)
             else:
                 logger.warning(f"⚠️ Нет ID файла в ответе Bitrix: {name}")
+
         except Exception as e:
             logger.error(f"❌ Ошибка при загрузке файла {name}: {e}")
 
+    # Прикрепляем все полученные ID файлов
     if file_ids:
         update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
         payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
