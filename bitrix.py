@@ -51,10 +51,8 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
 
 def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
     from bitrix import get_deal_fields
-    logger.info(f"📎 Начинаем скачивание и прикрепление файлов к сделке {deal_id}")
+    logger.info(f"📎 Начинаем загрузку и прикрепление файлов к сделке {deal_id}")
     file_ids = []
-
-    # Получаем ID папки из сделки
     fields = get_deal_fields(deal_id)
     folder_id = fields.get(FOLDER_FIELD_CODE)
 
@@ -69,38 +67,36 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
             file_bytes = r.content
 
             upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile?attach=Y"
-            files_data = {
-                'id': (None, str(folder_id)),
-                'data[NAME]': (None, name),
-                'data[CREATED_BY]': (None, '1'),
-                'file': (name, file_bytes)
+            multipart_form = {
+                "id": (None, str(folder_id)),
+                "data[NAME]": (None, name),
+                "data[CREATED_BY]": (None, "1"),
+                "file": (name, file_bytes)
             }
 
-            upload_resp = requests.post(upload_url, files=files_data)
-            upload_resp.raise_for_status()
-            result = upload_resp.json().get("result", {})
+            response = requests.post(upload_url, files=multipart_form)
+            response.raise_for_status()
+            result = response.json().get("result", {})
             file_id = result.get("ID")
 
             if file_id:
-                logger.info(f"✅ Загружен файл: {name} → ID: {file_id}")
+                logger.info(f"✅ Файл загружен: {name} → ID {file_id}")
                 file_ids.append(file_id)
             else:
-                logger.warning(f"⚠️ Нет ID файла в ответе Bitrix: {name}")
+                logger.warning(f"⚠️ Нет ID в ответе Bitrix: {name}")
 
         except Exception as e:
             logger.error(f"❌ Ошибка при загрузке файла {name}: {e}")
 
-    # Прикрепляем все полученные ID файлов
     if file_ids:
-        update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
         payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
-        logger.debug(f"➡️ Отправляем payload для прикрепления: {payload}")
-
+        update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
+        logger.debug(f"➡️ Обновляем сделку {deal_id}: {payload}")
         try:
-            resp = requests.post(update_url, json=payload)
-            resp.raise_for_status()
-            logger.info(f"📎 Успешно прикреплены файлы к сделке {deal_id}: {file_ids}")
+            response = requests.post(update_url, json=payload)
+            response.raise_for_status()
+            logger.info(f"📎 Прикреплены файлы к сделке {deal_id}: {file_ids}")
         except Exception as e:
-            logger.error(f"❌ Ошибка прикрепления к сделке {deal_id}: {e}")
+            logger.error(f"❌ Ошибка обновления сделки: {e}")
 
     return file_ids
