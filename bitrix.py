@@ -38,7 +38,7 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
     ]
 
 def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
-    logger.info(f"📎 Прикрепление файлов к сделке {deal_id} (финальная загрузка через uploadUrl)")
+    logger.info(f"\U0001F4CE Прикрепление файлов к сделке {deal_id} (финальная загрузка через uploadUrl)")
     file_ids = []
     fields = get_deal_fields(deal_id)
     folder_id = fields.get(FOLDER_FIELD_CODE)
@@ -53,6 +53,7 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
             r.raise_for_status()
             file_bytes = r.content
 
+            # Step 1 — get upload URL
             init_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile"
             init_resp = requests.post(init_url, files={
                 "id": (None, str(folder_id)),
@@ -62,13 +63,16 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
             })
             init_resp.raise_for_status()
             logger.debug(f"📤 Ответ init: {init_resp.text}")
-
             upload_url = init_resp.json().get("result", {}).get("uploadUrl")
+
             if not upload_url:
                 logger.warning(f"⚠️ Не удалось получить uploadUrl для {name}")
                 continue
 
-            upload_resp = requests.post(upload_url, files={"file": file_bytes})
+            # Step 2 — upload file to uploadUrl
+            upload_resp = requests.post(upload_url, files={
+                "file": (name, file_bytes, "application/octet-stream")
+            })
             upload_resp.raise_for_status()
             logger.debug(f"📥 Ответ upload {name}: {upload_resp.text}")
             upload_data = upload_resp.json()
@@ -76,8 +80,7 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
             file_id = (
                 upload_data.get("result", {}).get("ID") or
                 upload_data.get("result", {}).get("file", {}).get("ID") or
-                upload_data.get("ID") or
-                upload_data.get("result")
+                upload_data.get("ID")
             )
 
             if isinstance(file_id, int) or str(file_id).isdigit():
@@ -90,8 +93,8 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
             logger.error(f"❌ Ошибка при загрузке файла {name}: {e}")
 
     if file_ids:
-        payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
         update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
+        payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
         logger.debug(f"➡️ Обновляем сделку {deal_id}: {payload}")
         try:
             update_resp = requests.post(update_url, json=payload)
