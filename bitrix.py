@@ -1,6 +1,5 @@
 import os
 import requests
-import base64
 from typing import List, Dict
 from loguru import logger
 from dotenv import load_dotenv
@@ -50,7 +49,6 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
 
 
 def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
-    from bitrix import get_deal_fields
     logger.info(f"📎 Начинаем загрузку и прикрепление файлов к сделке {deal_id}")
     file_ids = []
     fields = get_deal_fields(deal_id)
@@ -59,28 +57,22 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
     for file in files:
         name = file["name"][:50].replace(" ", "_")
         url = file["download_url"]
-        logger.debug(f"⬇️ Скачиваем файл: {name} из {url}")
+        logger.debug(f"🌐 Загружаем по ссылке: {url}")
 
         try:
-            r = requests.get(url)
-            r.raise_for_status()
-            file_bytes = r.content
-
-            upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile?attach=Y"
-            multipart_form = {
-                "id": (None, str(folder_id)),
-                "data[NAME]": (None, name),
-                "data[CREATED_BY]": (None, "1"),
-                "file": (name, file_bytes)
-            }
-
-            response = requests.post(upload_url, files=multipart_form)
+            upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfilebyurl"
+            response = requests.post(upload_url, json={
+                "id": folder_id,
+                "url": url,
+                "filename": name,
+                "generateUniqueName": True
+            })
             response.raise_for_status()
             result = response.json().get("result", {})
             file_id = result.get("ID")
 
             if file_id:
-                logger.info(f"✅ Файл загружен: {name} → ID {file_id}")
+                logger.info(f"✅ Файл загружен по ссылке: {name} → ID {file_id}")
                 file_ids.append(file_id)
             else:
                 logger.warning(f"⚠️ Нет ID в ответе Bitrix: {name}")
