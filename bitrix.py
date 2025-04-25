@@ -74,17 +74,20 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
 
             response = requests.post(upload_url, files=multipart_form)
             response.raise_for_status()
-            result = response.json().get("result", {})
-            file_id = result.get("ID")
+
+            logger.debug(f"📤 Ответ Bitrix при загрузке {name}: {response.text}")
+            data = response.json()
+            result = data.get("result", {})
+            file_id = result.get("ID") or result.get("file", {}).get("ID") or data.get("ID")
 
             if file_id:
-                logger.info(f"✅ Файл загружен как в curl: {name} → ID {file_id}")
+                logger.info(f"✅ Файл загружен: {name} → ID {file_id}")
                 file_ids.append(file_id)
             else:
                 logger.warning(f"⚠️ Нет ID в ответе Bitrix: {name}")
 
         except Exception as e:
-            logger.error(f"❌ Ошибка загрузки файла {name}: {e}")
+            logger.error(f"❌ Ошибка при загрузке файла {name}: {e}")
 
     if file_ids:
         payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
@@ -93,9 +96,10 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
         try:
             response = requests.post(update_url, json=payload)
             response.raise_for_status()
-            logger.info(f"📎 Успешно прикреплены файлы к сделке {deal_id}: {file_ids}")
+            logger.info(f"📎 Прикреплены файлы к сделке {deal_id}: {file_ids}")
         except Exception as e:
             logger.error(f"❌ Ошибка обновления сделки: {e}")
 
     return file_ids
+
 
