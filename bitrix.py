@@ -49,36 +49,42 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
 
 
 def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
-    logger.info(f"📎 Начинаем загрузку и прикрепление файлов к сделке {deal_id}")
+    logger.info(f"📎 Прикрепление файлов к сделке {deal_id} (имитация curl)")
     file_ids = []
     fields = get_deal_fields(deal_id)
     folder_id = fields.get(FOLDER_FIELD_CODE)
 
     for file in files:
         name = file["name"][:50].replace(" ", "_")
-        url = file["download_url"]
-        logger.debug(f"🌐 Загружаем по ссылке: {url}")
+        download_url = file["download_url"]
+        logger.debug(f"⬇️ Скачиваем файл: {name} из {download_url}")
 
         try:
-            upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfilebyurl"
-            response = requests.post(upload_url, json={
-                "id": folder_id,
-                "url": url,
-                "filename": name,
-                "generateUniqueName": True
-            })
+            r = requests.get(download_url)
+            r.raise_for_status()
+            file_bytes = r.content
+
+            upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile"
+            multipart_form = {
+                "id": (None, str(folder_id)),
+                "data[NAME]": (None, name),
+                "data[CREATED_BY]": (None, "1"),
+                "file": (name, file_bytes, "application/octet-stream")
+            }
+
+            response = requests.post(upload_url, files=multipart_form)
             response.raise_for_status()
             result = response.json().get("result", {})
             file_id = result.get("ID")
 
             if file_id:
-                logger.info(f"✅ Файл загружен по ссылке: {name} → ID {file_id}")
+                logger.info(f"✅ Файл загружен как в curl: {name} → ID {file_id}")
                 file_ids.append(file_id)
             else:
                 logger.warning(f"⚠️ Нет ID в ответе Bitrix: {name}")
 
         except Exception as e:
-            logger.error(f"❌ Ошибка при загрузке файла {name}: {e}")
+            logger.error(f"❌ Ошибка загрузки файла {name}: {e}")
 
     if file_ids:
         payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
@@ -87,8 +93,9 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
         try:
             response = requests.post(update_url, json=payload)
             response.raise_for_status()
-            logger.info(f"📎 Прикреплены файлы к сделке {deal_id}: {file_ids}")
+            logger.info(f"📎 Успешно прикреплены файлы к сделке {deal_id}: {file_ids}")
         except Exception as e:
             logger.error(f"❌ Ошибка обновления сделки: {e}")
 
     return file_ids
+
