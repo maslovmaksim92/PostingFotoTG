@@ -3,7 +3,6 @@ import requests
 from typing import List, Dict
 from loguru import logger
 from dotenv import load_dotenv
-from urllib.parse import unquote
 
 load_dotenv()
 
@@ -11,6 +10,11 @@ BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
 PHOTO_FIELD_CODE = os.getenv("FILE_FIELD_ID") or "UF_CRM_1740994275251"
 FOLDER_FIELD_CODE = os.getenv("FOLDER_FIELD_ID") or "UF_CRM_1743273170850"
 ADDRESS_FIELD_CODE = "UF_CRM_1669561599956"
+
+def clean_upload_url(url: str) -> str:
+    if '|' in url:
+        url = url.split('|')[0]
+    return url.strip()
 
 def get_deal_fields(deal_id: int) -> Dict:
     url = f"{BITRIX_WEBHOOK}/crm.deal.get"
@@ -28,29 +32,84 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
     response = requests.post(url, json={"id": folder_id})
     response.raise_for_status()
     result = response.json().get("result", [])
-    valid_files = []
+    files = []
     for item in result:
-        if item.get("TYPE") != "file":
-            continue
-        name = item.get("NAME")
-        url = item.get("DOWNLOAD_URL")
-        if not name or not url:
-            logger.debug(f"⚠️ Пропущен файл без имени или ссылки: {name}")
-            continue
-        if name.lower().startswith("~") or name.lower() == "thumbs.db":
-            logger.debug(f"⚠️ Временный файл пропущен: {name}")
-            continue
-        valid_files.append({
-            "id": item["ID"],
-            "name": name,
-            "size": item.get("SIZE", 0),
-            "download_url": url
-        })
-    logger.info(f"✅ Найдено файлов в папке {folder_id}: {len(valid_files)}")
-    return valid_files
+        if item["TYPE"] == "file" and not item["NAME"].startswith("~") and item["NAME"] != "Thumbs.db":
+            files.append({
+                "id": item["ID"],
+                "name": item["NAME"],
+                "size": item.get("SIZE", 0),
+                "download_url": item["DOWNLOAD_URL"]
+            })
+        else:
+            logger.debug(f"⏭️ Пропущен файл: {item['NAME']}")
+    return files
 
-def clean_upload_url(raw_url: str) -> str:
-    url = unquote(raw_url)
-    if "?" in url:
-        url = url.split("?")[0] + "?" + url.split("?")[1].split("|", 1)[0]
-    return url.strip()
+def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
+    logger.info(f"📎 Прикрепление файлов к сделке {deal_id} (финальная загрузка через uploadUrl)")
+    file_ids = []
+    fields = get_deal_fields(deal_id)
+    folder_id = fields.get(FOLDER_FIELD_CODE)
+
+    for file in files:
+        name = file["name"][:50].replace(" ", "_")
+        download_url = file["download_url"]
+        logger.debug(f"⬇️ Скачиваем файл: {name} из {download_url}")
+
+        try:
+            r = requests.get(download_url)
+            r.raise_for_status()
+            file_bytes = r.content
+
+            # Инициализация загрузки
+            init_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile"
+            init_resp = requests.post(init_url, files={
+                "id": (None, str(folder_id)),
+                "data[NAME]": (None, name),
+                "data[CREATED_BY]": (None, "1"),
+                "generateUniqueName": (None, "Y")
+            })
+            init_resp.raise_for_status()
+            logger.debug(f"📤 Ответ init: {init_resp.text}")
+            upload_url = clean_upload_url(init_resp.json().get("result", {}).get("uploadUrl", ""))
+
+            if not upload_url:
+                logger.warning(f"⚠️ Не получен uploadUrl для файла {name}")
+                continue
+
+            # Загрузка файла
+            upload_resp = requests.post(upload_url, files={
+                "file": (name, file_bytes, "application/octet-stream")
+            })
+            upload_resp.raise_for_status()
+            upload_data = upload_resp.json()
+            logger.debug(f"📥 Ответ upload {name}: {upload_resp.text}")
+
+            file_id = (
+                upload_data.get("result", {}).get("ID") or
+                upload_data.get("result", {}).get("file", {}).get("ID") or
+                upload_data.get("ID") or
+                upload_data.get("result")
+            )
+
+            if isinstance(file_id, int) or str(file_id).isdigit():
+                logger.info(f"✅ Файл загружен: {name} → ID {file_id}")
+                file_ids.append(int(file_id))
+            else:
+                logger.warning(f"⚠️ Нет ID в ответе после загрузки: {name}")
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка при загрузке файла {name}: {e}")
+
+    if file_ids:
+        payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
+        update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
+        logger.debug(f"➡️ Обновляем сделку {deal_id}: {payload}")
+        try:
+            update_resp = requests.post(update_url, json=payload)
+            update_resp.raise_for_status()
+            logger.info(f"📎 Успешно прикреплены файлы к сделке {deal_id}: {file_ids}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка обновления сделки: {e}")
+
+    return file_ids
