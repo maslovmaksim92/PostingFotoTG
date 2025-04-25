@@ -11,11 +11,6 @@ PHOTO_FIELD_CODE = os.getenv("FILE_FIELD_ID") or "UF_CRM_1740994275251"
 FOLDER_FIELD_CODE = os.getenv("FOLDER_FIELD_ID") or "UF_CRM_1743273170850"
 ADDRESS_FIELD_CODE = "UF_CRM_1669561599956"
 
-def clean_upload_url(url: str) -> str:
-    if '|' in url:
-        url = url.split('|')[0]
-    return url.strip()
-
 def get_deal_fields(deal_id: int) -> Dict:
     url = f"{BITRIX_WEBHOOK}/crm.deal.get"
     response = requests.post(url, json={"id": deal_id})
@@ -32,21 +27,18 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
     response = requests.post(url, json={"id": folder_id})
     response.raise_for_status()
     result = response.json().get("result", [])
-    files = []
-    for item in result:
-        if item["TYPE"] == "file" and not item["NAME"].startswith("~") and item["NAME"] != "Thumbs.db":
-            files.append({
-                "id": item["ID"],
-                "name": item["NAME"],
-                "size": item.get("SIZE", 0),
-                "download_url": item["DOWNLOAD_URL"]
-            })
-        else:
-            logger.debug(f"⏭️ Пропущен файл: {item['NAME']}")
-    return files
+    return [
+        {
+            "id": item["ID"],
+            "name": item["NAME"],
+            "size": item.get("SIZE", 0),
+            "download_url": item["DOWNLOAD_URL"]
+        }
+        for item in result if item["TYPE"] == "file"
+    ]
 
 def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
-    logger.info(f"📎 Прикрепление файлов к сделке {deal_id} (финальная загрузка через uploadUrl)")
+    logger.info(f"📎 Прикрепление файлов к сделке {deal_id} через disk.file.upload")
     file_ids = []
     fields = get_deal_fields(deal_id)
     folder_id = fields.get(FOLDER_FIELD_CODE)
@@ -61,34 +53,19 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
             r.raise_for_status()
             file_bytes = r.content
 
-            # Инициализация загрузки
-            init_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile"
-            init_resp = requests.post(init_url, files={
+            upload_url = f"{BITRIX_WEBHOOK}/disk.file.upload"
+            upload_resp = requests.post(upload_url, files={
                 "id": (None, str(folder_id)),
                 "data[NAME]": (None, name),
                 "data[CREATED_BY]": (None, "1"),
-                "generateUniqueName": (None, "Y")
-            })
-            init_resp.raise_for_status()
-            logger.debug(f"📤 Ответ init: {init_resp.text}")
-            upload_url = clean_upload_url(init_resp.json().get("result", {}).get("uploadUrl", ""))
-
-            if not upload_url:
-                logger.warning(f"⚠️ Не получен uploadUrl для файла {name}")
-                continue
-
-            # Загрузка файла
-            upload_resp = requests.post(upload_url, files={
-                "file": (name, file_bytes, "application/octet-stream")
+                "fileContent": (name, file_bytes, "application/octet-stream")
             })
             upload_resp.raise_for_status()
-            upload_data = upload_resp.json()
             logger.debug(f"📥 Ответ upload {name}: {upload_resp.text}")
+            upload_data = upload_resp.json()
 
             file_id = (
                 upload_data.get("result", {}).get("ID") or
-                upload_data.get("result", {}).get("file", {}).get("ID") or
-                upload_data.get("ID") or
                 upload_data.get("result")
             )
 
