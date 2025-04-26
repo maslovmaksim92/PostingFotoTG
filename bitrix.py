@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
-PHOTO_FIELD_CODE = "UF_CRM_1740994275151"  # новое поле для прикрепления файлов
+PHOTO_FIELD_CODE = os.getenv("FILE_FIELD_ID") or "UF_CRM_1740994275251"
 FOLDER_FIELD_CODE = os.getenv("FOLDER_FIELD_ID") or "UF_CRM_1743273170850"
 ADDRESS_FIELD_CODE = "UF_CRM_1669561599956"
 FILE_LINKS_FIELD_CODE = "UF_CRM_1745671890168"
@@ -70,7 +70,12 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
             logger.error(f"❌ Ошибка обновления сделки при прикреплении файлов: {e}")
 
     if download_urls:
-        payload_links = {"id": deal_id, "fields": {FILE_LINKS_FIELD_CODE: "\n".join(download_urls)}}
+        payload_links = {
+            "id": deal_id,
+            "fields": {
+                FILE_LINKS_FIELD_CODE: [{"VALUE": url} for url in download_urls]
+            }
+        }
         update_links_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
         try:
             links_resp = requests.post(update_links_url, json=payload_links)
