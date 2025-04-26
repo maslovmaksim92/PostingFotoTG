@@ -42,4 +42,4 @@ async def deal_update(request: Request):
 
     except Exception as e:
         logger.exception("❌ Критическая ошибка в deal_update")
-        return {"status": "error", "message": str(e)}}
+        return {"status": "error", "message": str(e)}
