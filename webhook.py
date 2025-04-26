@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 from loguru import logger
-from bitrix import get_deal_fields, attach_photos_if_cleaning_done
+from bitrix import get_deal_fields
 from services import upload_folder_to_deal
 
 router = APIRouter()
@@ -31,25 +31,26 @@ async def deal_update(request: Request):
         fields = get_deal_fields(deal_id)
         logger.debug("📋 Все поля сделки {}: {}", deal_id, fields)
 
+        stage_id = fields.get("STAGE_ID")
         folder_id = fields.get("UF_CRM_1743273170850")
-        logger.info("📬 Обнаружена папка: deal_id={}, folder_id={}", deal_id, folder_id)
 
         if not folder_id:
             logger.error("❗ Ошибка: нет папки у сделки {}", deal_id)
             return {"status": "error", "message": "No folder_id in deal"}
 
-        # Загружаем файлы из папки в сделку
-        upload_folder_to_deal(deal_id=int(deal_id), folder_id=int(folder_id))
-        logger.success("✅ Файлы из папки {} прикреплены к сделке {}", folder_id, deal_id)
+        if stage_id != "CLEAN_DONE":
+            logger.info("⏭ Сделка {} не на стадии 'уборка завершена'. Текущая стадия: {}", deal_id, stage_id)
+            return {"status": "skipped", "reason": "wrong stage"}
 
-        # Дополнительно: если стадия = "уборка завершена", прикрепляем через Bitrix upload
+        logger.info("📬 Сделка {} на стадии 'уборка завершена'. Пытаемся загрузить фото.", deal_id)
+
         try:
-            logger.info("🚀 Проверяем стадию сделки {} для прикрепления фото", deal_id)
-            await attach_photos_if_cleaning_done(int(deal_id))
+            upload_folder_to_deal(deal_id=int(deal_id), folder_id=int(folder_id))
+            logger.success("✅ Файлы из папки {} прикреплены к сделке {}", folder_id, deal_id)
+            return {"status": "ok", "deal_id": deal_id}
         except Exception as e:
-            logger.error("❌ Ошибка в attach_photos_if_cleaning_done: {}", e)
-
-        return {"status": "ok", "deal_id": deal_id}
+            logger.error("❌ Ошибка в upload_folder_to_deal для сделки {}: {}", deal_id, e)
+            return {"status": "error", "message": str(e)}
 
     except Exception as e:
         logger.exception("❌ Критическая ошибка обработки запроса /deal_update")
