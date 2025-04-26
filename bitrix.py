@@ -40,34 +40,52 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
     ]
 
 def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
-    logger.info(f"📎 Прикрепление файлов к сделке {deal_id} через ID файлов (без скачивания)")
-    file_ids = []
+    logger.info(f"📎 Прикрепление файлов к сделке {deal_id} через скачивание и загрузку")
+    file_data_list = []
     download_urls = []
 
     if not files:
         logger.warning(f"⚠️ Нет файлов для прикрепления в сделке {deal_id}")
         return []
 
-    logger.debug(f"📋 Список файлов к прикреплению: {[file['name'] for file in files]}")
-
     for file in files:
-        file_id = file.get("id")
+        name = file.get("name", "file.jpg")
         download_url = file.get("download_url")
-        if file_id:
-            file_ids.append(int(file_id))
-        if download_url:
-            download_urls.append(download_url)
 
-    if file_ids:
-        payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
+        if download_url:
+            try:
+                response = requests.get(download_url)
+                response.raise_for_status()
+                file_bytes = response.content
+
+                # Добавляем файл в список для обновления сделки
+                file_data_list.append({
+                    "fileContent": [name, file_bytes]
+                })
+                download_urls.append(download_url)
+                logger.debug(f"⬇️ Скачан файл: {name}")
+
+            except Exception as e:
+                logger.error(f"❌ Ошибка скачивания файла {name}: {e}")
+
+    if file_data_list:
+        payload = {
+            "id": deal_id,
+            "fields": {
+                PHOTO_FIELD_CODE: file_data_list
+            }
+        }
         update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
-        logger.debug(f"➡️ Обновляем сделку {deal_id} прикреплением файлов: {file_ids}")
+        logger.debug(f"➡️ Обновляем сделку {deal_id} загрузкой файлов.")
         try:
-            update_resp = requests.post(update_url, json=payload)
+            update_resp = requests.post(update_url, files={
+                "id": (None, str(deal_id)),
+                "fields[{}][0][fileContent]".format(PHOTO_FIELD_CODE): (file_data_list[0]['fileContent'][0], file_data_list[0]['fileContent'][1], 'application/octet-stream')
+            })
             update_resp.raise_for_status()
-            logger.info(f"✅ Файлы через ID прикреплены к сделке {deal_id}: {file_ids}")
+            logger.info(f"✅ Файлы физически прикреплены к сделке {deal_id}")
         except Exception as e:
-            logger.error(f"❌ Ошибка обновления сделки при прикреплении файлов: {e}")
+            logger.error(f"❌ Ошибка обновления сделки при загрузке файлов: {e}")
 
     if download_urls:
         payload_links = {
@@ -84,4 +102,4 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
         except Exception as e:
             logger.error(f"❌ Ошибка сохранения ссылок на файлы: {e}")
 
-    return file_ids
+    return []
