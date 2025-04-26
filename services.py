@@ -1,6 +1,6 @@
-from bitrix_upload import upload_file_to_bitrix
+# services.py — подключение уже через существующие функции
 
-# Пример вызова в нужном месте:
-# upload_file_to_bitrix("/tmp/photo.jpg", folder_id)
+# Никаких лишних импортов, работаем через bitrix.py
+# (upload_folder_to_deal уже реализован)
 
-# Остальной код остаётся прежним
+# Можно оставить этот файл пустым, если логика нужна позже.
