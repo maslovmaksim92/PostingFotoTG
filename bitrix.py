@@ -73,7 +73,7 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
         payload_links = {
             "id": deal_id,
             "fields": {
-                FILE_LINKS_FIELD_CODE: [{"VALUE": url} for url in download_urls]
+                FILE_LINKS_FIELD_CODE: "\n".join(download_urls)
             }
         }
         update_links_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
