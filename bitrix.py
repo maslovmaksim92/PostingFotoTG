@@ -28,6 +28,7 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
     response = requests.post(url, json={"id": folder_id})
     response.raise_for_status()
     result = response.json().get("result", [])
+    logger.debug(f"🔍 Найдено файлов в папке {folder_id}: {len(result)} файлов")
     return [
         {
             "id": item["ID"],
@@ -42,6 +43,12 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
     logger.info(f"📎 Прикрепление файлов к сделке {deal_id} через ID файлов (без скачивания)")
     file_ids = []
     download_urls = []
+
+    if not files:
+        logger.warning(f"⚠️ Нет файлов для прикрепления в сделке {deal_id}")
+        return []
+
+    logger.debug(f"📋 Список файлов к прикреплению: {[file['name'] for file in files]}")
 
     for file in files:
         file_id = file.get("id")
