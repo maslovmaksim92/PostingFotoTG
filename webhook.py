@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 from loguru import logger
 from bitrix import get_deal_fields
-from services import send_report
+from services import upload_folder_to_deal
 
 router = APIRouter()
 
@@ -35,8 +35,8 @@ async def deal_update(request: Request):
         return {"status": "error", "message": "No folder_id in deal"}
 
     try:
-        send_report(deal_id=int(deal_id), folder_id=int(folder_id))
+        upload_folder_to_deal(deal_id=int(deal_id), folder_id=int(folder_id))
         return {"status": "ok"}
     except Exception as e:
-        logger.error("❌ Ошибка в send_report для сделки {}: {}", deal_id, e)
+        logger.error("❌ Ошибка в upload_folder_to_deal для сделки {}: {}", deal_id, e)
         return {"status": "error", "message": str(e)}
