@@ -1,0 +1,31 @@
+✅ Удалены устаревшие директории и файлы:
+
+# Папки:
+- core/
+- debug/
+- logs/
+- scripts/
+- services/ (старые части)
+- utils/ (всё, кроме formatting.py и prompts.py)
+
+# Файлы:
+- bitrix_upload.py
+- app.db
+- checklist.txt
+- PLAN_OPTIMIZE.md
+- AI_PROMPT.md
+- folder_db.py
+
+# Оставлено:
+- app.py
+- webhook.py
+- services.py
+- bitrix.py
+- telegram.py
+- gpt.py
+- config.py
+- utils/formatting.py
+- utils/prompts.py
+- requirements.txt
+- README.md
+- tests/
