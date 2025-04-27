@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from typing import List, Dict
 from datetime import datetime
@@ -71,10 +72,11 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
 
     update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
 
-    def check_files_attached():
+    def check_files_attached() -> bool:
         try:
             deal = get_deal_fields(deal_id)
             attached = deal.get(PHOTO_FIELD_CODE, [])
+            logger.debug(f"📋 Состояние файлов в сделке {deal_id}: {attached}")
             return bool(attached)
         except Exception as e:
             logger.error(f"❌ Ошибка при проверке прикрепленных файлов: {e}")
@@ -85,10 +87,14 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
         update_resp.raise_for_status()
         logger.info(f"✅ Файлы прикреплены к сделке {deal_id}: {file_ids}")
 
+        logger.info("⏳ Ждём 2 секунды перед проверкой состояния...")
+        time.sleep(2)
+
         if not check_files_attached():
             logger.warning(f"⚠️ После первой попытки файлы не прикреплены, пробуем повторно...")
             retry_resp = requests.post(update_url, json=payload)
             retry_resp.raise_for_status()
+            time.sleep(2)
             if check_files_attached():
                 logger.success(f"✅ После повтора файлы прикреплены к сделке {deal_id}")
             else:
