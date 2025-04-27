@@ -3,7 +3,6 @@ from telegram import send_media_group
 from loguru import logger
 import asyncio
 
-
 def upload_folder_to_deal(deal_id: int, folder_id: int):
     try:
         files = get_files_from_folder(folder_id)
