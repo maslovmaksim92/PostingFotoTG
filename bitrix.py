@@ -40,7 +40,7 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
     ]
 
 def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
-    logger.info(f"📎 Загрузка файлов через disk.folder.uploadfile с двухэтапной загрузкой для сделки {deal_id}")
+    logger.info(f"📎 Загрузка файлов через disk.folder.uploadfile с коррекцией ссылок для сделки {deal_id}")
     uploaded_file_ids = []
     download_urls = []
 
@@ -55,8 +55,11 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
         download_url = file.get("download_url")
 
         if download_url:
+            # Корректируем ссылку перед скачиванием
             if "&auth=" in download_url:
-                download_url = download_url.replace("&auth=", "?auth=")
+                parts = download_url.split("&auth=")
+                if len(parts) == 2:
+                    download_url = parts[0] + "?auth=" + parts[1]
 
             try:
                 response = requests.get(download_url)
