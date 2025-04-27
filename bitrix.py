@@ -1,6 +1,7 @@
 import os
 import requests
 from typing import List, Dict
+from datetime import datetime
 from loguru import logger
 from dotenv import load_dotenv
 
@@ -21,7 +22,12 @@ def get_deal_fields(deal_id: int) -> Dict:
 def get_address_from_deal(deal_id: int) -> str:
     fields = get_deal_fields(deal_id)
     raw = fields.get(ADDRESS_FIELD_CODE, "")
-    return raw.split("|")[0] if "|" in raw else raw
+    if "|" in raw:
+        address = raw.split("|")[0]
+    else:
+        address = raw
+    address = address.replace(",", "").replace("|", "").replace("\\", "").strip()
+    return address
 
 def get_files_from_folder(folder_id: int) -> List[Dict]:
     url = f"{BITRIX_WEBHOOK}/disk.folder.getchildren"
@@ -49,10 +55,14 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
         return []
 
     folder_id = get_deal_fields(deal_id).get(FOLDER_FIELD_CODE)
+    address = get_address_from_deal(deal_id)
+    today_str = datetime.now().strftime("%Y-%m-%d")
 
-    for file in files:
-        name = file.get("name", "file.jpg")
+    for idx, file in enumerate(files):
         download_url = file.get("download_url")
+
+        # Генерируем новое имя файла
+        new_name = f"уборка-{address}-{today_str} ваш дом-{idx + 1}.jpg"
 
         if download_url:
             # Корректируем ссылку перед скачиванием
@@ -68,21 +78,21 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
 
                 # Этап 1: инициализация загрузки
                 init_upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile"
-                init_resp = requests.post(init_upload_url, files={
-                    "id": (None, str(folder_id)),
-                    "data[NAME]": (None, name),
-                    "generateUniqueName": (None, "Y")
+                init_resp = requests.post(init_upload_url, data={
+                    "id": folder_id,
+                    "data[NAME]": new_name,
+                    "generateUniqueName": "Y"
                 })
                 init_resp.raise_for_status()
                 upload_url = init_resp.json().get("result", {}).get("uploadUrl")
 
                 if not upload_url:
-                    logger.error(f"❌ Не получен uploadUrl для файла {name}")
+                    logger.error(f"❌ Не получен uploadUrl для файла {new_name}")
                     continue
 
                 # Этап 2: отправка файла на uploadUrl
                 upload_resp = requests.post(upload_url, files={
-                    "file": (name, file_bytes, "application/octet-stream")
+                    "file": (new_name, file_bytes, "application/octet-stream")
                 })
                 upload_resp.raise_for_status()
                 upload_data = upload_resp.json()
@@ -95,12 +105,12 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
                 if uploaded_file_id:
                     uploaded_file_ids.append(int(uploaded_file_id))
                     download_urls.append(download_url)
-                    logger.info(f"✅ Файл успешно загружен через uploadUrl: {name} → ID {uploaded_file_id}")
+                    logger.info(f"✅ Файл успешно загружен: {new_name} → ID {uploaded_file_id}")
                 else:
-                    logger.error(f"❌ Не получен ID загруженного файла через uploadUrl для {name}")
+                    logger.error(f"❌ Не получен ID загруженного файла для {new_name}")
 
             except Exception as e:
-                logger.error(f"❌ Ошибка при загрузке файла {name}: {e}")
+                logger.error(f"❌ Ошибка при загрузке файла {new_name}: {e}")
 
     if uploaded_file_ids:
         payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: uploaded_file_ids}}
