@@ -5,7 +5,6 @@ from typing import List, Dict
 from datetime import datetime
 from loguru import logger
 from dotenv import load_dotenv
-from your_app_onrender_com__jit_plugin import bitrixCall  # ✅ Правильный импорт
 
 load_dotenv()
 
@@ -14,6 +13,18 @@ PHOTO_FIELD_CODE = os.getenv("FILE_FIELD_ID") or "UF_CRM_1740994275251"
 FOLDER_FIELD_CODE = os.getenv("FOLDER_FIELD_ID") or "UF_CRM_1743273170850"
 ADDRESS_FIELD_CODE = "UF_CRM_1669561599956"
 FILE_LINKS_FIELD_CODE = "UF_CRM_1745671890168"
+
+
+def bitrixCall(payload: dict) -> dict:
+    if not BITRIX_WEBHOOK:
+        raise ValueError("BITRIX_WEBHOOK не задан в .env")
+    
+    method = payload.get("method")
+    params = payload.get("params", {})
+    url = f"{BITRIX_WEBHOOK}/{method}"
+    response = requests.post(url, json=params)
+    response.raise_for_status()
+    return response.json()
 
 
 def get_deal_fields(deal_id: int) -> Dict:
