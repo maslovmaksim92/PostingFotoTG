@@ -12,7 +12,7 @@ async def upload_folder_to_deal(deal_id: int, folder_id: int):
         attached_ids = await attach_media_to_deal(deal_id, files)
 
         if attached_ids:
-            logger.info(f"📎 Файлы прикреплены по ID: {attached_ids}")
+            logger.info(f"💎 Файлы прикреплены по ID: {attached_ids}")
         else:
             logger.warning(f"⚠️ Файлы не прикрепились по ID, возможно потребуется доп. обработка")
 
@@ -35,6 +35,7 @@ async def upload_folder_to_deal(deal_id: int, folder_id: int):
         except Exception as e:
             logger.error(f"❌ Ошибка отправки в Telegram: {e}")
 
+        # Сохраняем ссылки в карточку сделки
         await update_file_links_in_deal(deal_id, photo_urls)
         logger.success(f"✅ Ссылки на фото сохранены в сделке {deal_id}")
 
