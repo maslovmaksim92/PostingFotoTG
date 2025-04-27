@@ -1,105 +1,64 @@
-import os
 import time
 import requests
-from typing import List, Dict
-from datetime import datetime
-from loguru import logger
-from dotenv import load_dotenv
+import logging
+from utils import bitrix_call
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
-BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
-PHOTO_FIELD_CODE = os.getenv("FILE_FIELD_ID") or "UF_CRM_1740994275251"
-FOLDER_FIELD_CODE = os.getenv("FOLDER_FIELD_ID") or "UF_CRM_1743273170850"
-ADDRESS_FIELD_CODE = "UF_CRM_1669561599956"
-FILE_LINKS_FIELD_CODE = "UF_CRM_1745671890168"
+def get_files_from_folder(folder_id):
+    try:
+        response = bitrix_call('disk.folder.getchildren', {"id": folder_id})
+        files = response.get('result', [])
+        logger.debug(f"\U0001f4cb Найдено файлов в папке {folder_id}: {len(files)} файлов")
+        return files
+    except Exception as e:
+        logger.error(f"\u274c Ошибка при получении файлов из папки {folder_id}: {str(e)}")
+        return []
 
-
-def get_deal_fields(deal_id: int) -> Dict:
-    url = f"{BITRIX_WEBHOOK}/crm.deal.get"
-    response = requests.post(url, json={"id": deal_id})
-    response.raise_for_status()
-    return response.json().get("result", {})
-
-
-def get_address_from_deal(deal_id: int) -> str:
-    fields = get_deal_fields(deal_id)
-    raw = fields.get(ADDRESS_FIELD_CODE, "")
-    if "|" in raw:
-        address = raw.split("|")[0]
-    else:
-        address = raw
-    address = address.replace(",", "").replace("|", "").replace("\\", "").strip()
-    return address
-
-
-def get_files_from_folder(folder_id: int) -> List[Dict]:
-    url = f"{BITRIX_WEBHOOK}/disk.folder.getchildren"
-    response = requests.post(url, json={"id": folder_id})
-    response.raise_for_status()
-    result = response.json().get("result", [])
-    logger.debug(f"🔍 Найдено файлов в папке {folder_id}: {len(result)} файлов")
-    return [
-        {
-            "id": item["ID"],
-            "name": item["NAME"],
-            "size": item.get("SIZE", 0),
-            "download_url": item.get("DOWNLOAD_URL")
-        }
-        for item in result if item["TYPE"] == "file"
-    ]
-
-
-def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
-    logger.info(f"📎 Прикрепление файлов напрямую по ID к сделке {deal_id}")
-
+def attach_media_to_deal(deal_id, folder_id):
+    logger.info(f"\U0001f4ce Прикрепление файлов напрямую по ID к сделке {deal_id}")
+    files = get_files_from_folder(folder_id)
     if not files:
-        logger.warning(f"⚠️ Нет файлов для прикрепления в сделке {deal_id}")
-        return []
+        logger.warning(f"\u26a0\ufe0f Нет файлов для прикрепления в папке {folder_id}")
+        return
 
-    file_ids = [int(file["id"]) for file in files if file.get("id")]
+    file_ids = [file['ID'] for file in files]
 
-    if not file_ids:
-        logger.warning(f"⚠️ Нет действительных ID файлов для прикрепления к сделке {deal_id}")
-        return []
-
-    payload = {
-        "id": deal_id,
-        "fields": {
-            PHOTO_FIELD_CODE: file_ids
+    fields = {
+        'fields': {
+            'UF_CRM_1740994275251': file_ids
         }
     }
-
-    update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
-
-    def check_files_attached() -> bool:
-        try:
-            deal = get_deal_fields(deal_id)
-            attached = deal.get(PHOTO_FIELD_CODE, [])
-            logger.debug(f"📋 Состояние файлов в сделке {deal_id}: {attached}")
-            return bool(attached)
-        except Exception as e:
-            logger.error(f"❌ Ошибка при проверке прикрепленных файлов: {e}")
-            return False
-
     try:
-        update_resp = requests.post(update_url, json=payload)
-        update_resp.raise_for_status()
-        logger.info(f"✅ Файлы прикреплены к сделке {deal_id}: {file_ids}")
+        response = bitrix_call('crm.deal.update', {"id": deal_id, **fields})
+        logger.info(f"\u2705 Файлы прикреплены к сделке {deal_id}: {file_ids}")
 
-        logger.info("⏳ Ждём 2 секунды перед проверкой состояния...")
+        logger.info("\u23f3 Ждём 2 секунды перед проверкой состояния...")
         time.sleep(2)
 
-        if not check_files_attached():
-            logger.warning(f"⚠️ После первой попытки файлы не прикреплены, пробуем повторно...")
-            retry_resp = requests.post(update_url, json=payload)
-            retry_resp.raise_for_status()
+        attached = check_files_attached(deal_id)
+        if not attached:
+            logger.warning(f"\u26a0\ufe0f После первой попытки файлы не прикреплены, пробуем повторно...")
+            time.sleep(3)
+            response = bitrix_call('crm.deal.update', {"id": deal_id, **fields})
+            logger.info("\u23f3 Ждём ещё 2 секунды...")
             time.sleep(2)
-            if check_files_attached():
-                logger.success(f"✅ После повтора файлы прикреплены к сделке {deal_id}")
+            attached = check_files_attached(deal_id)
+            if attached:
+                logger.info(f"\u2705 Файлы прикреплены после повторной попытки к сделке {deal_id}")
             else:
-                logger.error(f"❌ После повтора файлы всё ещё не прикреплены к сделке {deal_id}")
+                logger.error(f"\u274c После повтора файлы всё ещё не прикреплены к сделке {deal_id}")
     except Exception as e:
-        logger.error(f"❌ Ошибка при прикреплении файлов к сделке {deal_id}: {e}")
+        logger.error(f"\u274c Ошибка при прикреплении файлов к сделке {deal_id}: {str(e)}")
 
-    return file_ids
+    logger.info(f"\u2705 Файлы из папки {folder_id} прикреплены к сделке {deal_id}")
+
+def check_files_attached(deal_id):
+    try:
+        deal = bitrix_call('crm.deal.get', {"id": deal_id})
+        files = deal.get('result', {}).get('UF_CRM_1740994275251', [])
+        logger.debug(f"\U0001f4cb Состояние файлов в сделке {deal_id}: {files}")
+        return bool(files)
+    except Exception as e:
+        logger.error(f"\u274c Ошибка проверки состояния прикрепленных файлов в сделке {deal_id}: {str(e)}")
+        return False
