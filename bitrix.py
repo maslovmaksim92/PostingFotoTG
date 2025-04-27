@@ -70,10 +70,29 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
     }
 
     update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
+
+    def check_files_attached():
+        try:
+            deal = get_deal_fields(deal_id)
+            attached = deal.get(PHOTO_FIELD_CODE, [])
+            return bool(attached)
+        except Exception as e:
+            logger.error(f"❌ Ошибка при проверке прикрепленных файлов: {e}")
+            return False
+
     try:
         update_resp = requests.post(update_url, json=payload)
         update_resp.raise_for_status()
-        logger.info(f"✅ Файлы успешно прикреплены к сделке {deal_id}: {file_ids}")
+        logger.info(f"✅ Файлы прикреплены к сделке {deal_id}: {file_ids}")
+
+        if not check_files_attached():
+            logger.warning(f"⚠️ После первой попытки файлы не прикреплены, пробуем повторно...")
+            retry_resp = requests.post(update_url, json=payload)
+            retry_resp.raise_for_status()
+            if check_files_attached():
+                logger.success(f"✅ После повтора файлы прикреплены к сделке {deal_id}")
+            else:
+                logger.error(f"❌ После повтора файлы всё ещё не прикреплены к сделке {deal_id}")
     except Exception as e:
         logger.error(f"❌ Ошибка при прикреплении файлов к сделке {deal_id}: {e}")
 
