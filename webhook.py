@@ -11,7 +11,7 @@ last_processed = {}
 async def deal_update(request: Request):
     try:
         data = await request.form()
-        logger.warning("🐞 [deal_update] Сырой payload: {}", dict(data))
+        logger.warning("🔞 [deal_update] Сырой payload: {}", dict(data))
 
         deal_id = data.get("data[FIELDS][ID]")
         if not deal_id:
@@ -36,7 +36,7 @@ async def deal_update(request: Request):
             logger.error("❗ Нет папки у сделки {}", deal_id)
             return {"status": "error", "message": "No folder_id in deal"}
 
-        upload_folder_to_deal(deal_id=int(deal_id), folder_id=int(folder_id))
+        await upload_folder_to_deal(deal_id=int(deal_id), folder_id=int(folder_id))
         logger.success("✅ Файлы успешно прикреплены к сделке {}", deal_id)
         return {"status": "ok", "deal_id": deal_id}
 
