@@ -40,8 +40,8 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
     ]
 
 def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
-    logger.info(f"📎 Прикрепление файлов к сделке {deal_id} через скачивание и загрузку")
-    file_data_list = []
+    logger.info(f"📎 Загрузка файлов через disk.folder.uploadfile для сделки {deal_id}")
+    uploaded_file_ids = []
     download_urls = []
 
     if not files:
@@ -53,39 +53,47 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
         download_url = file.get("download_url")
 
         if download_url:
+            # Фиксим ссылку перед скачиванием
+            if "&auth=" in download_url:
+                download_url = download_url.replace("&auth=", "?auth=")
+
             try:
                 response = requests.get(download_url)
                 response.raise_for_status()
                 file_bytes = response.content
 
-                # Добавляем файл в список для обновления сделки
-                file_data_list.append({
-                    "fileContent": [name, file_bytes]
+                # Загружаем файл в Bitrix через disk.folder.uploadfile
+                init_upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile"
+                folder_id = get_deal_fields(deal_id).get(FOLDER_FIELD_CODE)
+
+                init_resp = requests.post(init_upload_url, files={
+                    "id": (None, str(folder_id)),
+                    "data[NAME]": (None, name),
+                    "generateUniqueName": (None, "Y"),
+                    "file": (name, file_bytes, "application/octet-stream")
                 })
-                download_urls.append(download_url)
-                logger.debug(f"⬇️ Скачан файл: {name}")
+                init_resp.raise_for_status()
+                uploaded_file_id = init_resp.json().get("result", {}).get("ID")
+
+                if uploaded_file_id:
+                    uploaded_file_ids.append(int(uploaded_file_id))
+                    download_urls.append(download_url)
+                    logger.info(f"✅ Файл загружен в диск Bitrix: {name} → ID {uploaded_file_id}")
+                else:
+                    logger.error(f"❌ Не получен ID загруженного файла для {name}")
 
             except Exception as e:
-                logger.error(f"❌ Ошибка скачивания файла {name}: {e}")
+                logger.error(f"❌ Ошибка загрузки файла {name}: {e}")
 
-    if file_data_list:
-        payload = {
-            "id": deal_id,
-            "fields": {
-                PHOTO_FIELD_CODE: file_data_list
-            }
-        }
+    if uploaded_file_ids:
+        payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: uploaded_file_ids}}
         update_url = f"{BITRIX_WEBHOOK}/crm.deal.update"
-        logger.debug(f"➡️ Обновляем сделку {deal_id} загрузкой файлов.")
         try:
-            update_resp = requests.post(update_url, files={
-                "id": (None, str(deal_id)),
-                "fields[{}][0][fileContent]".format(PHOTO_FIELD_CODE): (file_data_list[0]['fileContent'][0], file_data_list[0]['fileContent'][1], 'application/octet-stream')
-            })
+            update_resp = requests.post(update_url, json=payload)
             update_resp.raise_for_status()
-            logger.info(f"✅ Файлы физически прикреплены к сделке {deal_id}")
+            logger.info(f"✅ Файлы прикреплены к сделке {deal_id}: {uploaded_file_ids}")
         except Exception as e:
-            logger.error(f"❌ Ошибка обновления сделки при загрузке файлов: {e}")
+            logger.error(f"❌ Ошибка обновления сделки при прикреплении файлов: {e}")
 
     if download_urls:
         payload_links = {
@@ -102,4 +110,4 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
         except Exception as e:
             logger.error(f"❌ Ошибка сохранения ссылок на файлы: {e}")
 
-    return []
+    return uploaded_file_ids
