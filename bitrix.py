@@ -12,6 +12,8 @@ PHOTO_FIELD_CODE = os.getenv("FILE_FIELD_ID") or "UF_CRM_1740994275251"
 FOLDER_FIELD_CODE = os.getenv("FOLDER_FIELD_ID") or "UF_CRM_1743273170850"
 ADDRESS_FIELD_CODE = "UF_CRM_1669561599956"
 FILE_LINKS_FIELD_CODE = "UF_CRM_1745671890168"
+# Фиксированная папка на MyDisk куда будем заливать файлы
+FIXED_FOLDER_ID = "upload"
 
 def get_deal_fields(deal_id: int) -> Dict:
     url = f"{BITRIX_WEBHOOK}/crm.deal.get"
@@ -46,7 +48,7 @@ def get_files_from_folder(folder_id: int) -> List[Dict]:
     ]
 
 def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
-    logger.info(f"📎 Загрузка файлов через disk.folder.uploadfile с коррекцией ссылок для сделки {deal_id}")
+    logger.info(f"📎 Загрузка файлов в фиксированную папку на MyDisk для сделки {deal_id}")
     uploaded_file_ids = []
     download_urls = []
 
@@ -54,18 +56,15 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
         logger.warning(f"⚠️ Нет файлов для прикрепления в сделке {deal_id}")
         return []
 
-    folder_id = get_deal_fields(deal_id).get(FOLDER_FIELD_CODE)
     address = get_address_from_deal(deal_id)
     today_str = datetime.now().strftime("%Y-%m-%d")
 
     for idx, file in enumerate(files):
         download_url = file.get("download_url")
 
-        # Генерируем новое имя файла
         new_name = f"уборка-{address}-{today_str} ваш дом-{idx + 1}.jpg"
 
         if download_url:
-            # Корректируем ссылку перед скачиванием
             if "&auth=" in download_url:
                 parts = download_url.split("&auth=")
                 if len(parts) == 2:
@@ -76,10 +75,10 @@ def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
                 response.raise_for_status()
                 file_bytes = response.content
 
-                # Этап 1: инициализация загрузки
+                # Этап 1: инициализация загрузки в фиксированную папку
                 init_upload_url = f"{BITRIX_WEBHOOK}/disk.folder.uploadfile"
                 init_resp = requests.post(init_upload_url, data={
-                    "id": folder_id,
+                    "id": FIXED_FOLDER_ID,
                     "data[NAME]": new_name,
                     "generateUniqueName": "Y"
                 })
