@@ -1,14 +1,19 @@
-import asyncio
+import os
+import httpx
+from loguru import logger
+from dotenv import load_dotenv
 from datetime import datetime
 from babel.dates import format_date
-from loguru import logger
 
-async def send_media_group(photos, address: str = "") -> bool:
+load_dotenv()
+
+TG_CHAT_ID = os.getenv("TG_CHAT_ID")
+TG_BOT_TOKEN = os.getenv("TG_GITHUB_BOT")
+
+async def send_media_group(photos, address):
     if not address:
-        logger.warning("📭 Адрес объекта не указан, используем fallback")
+        logger.warning("\U0001F4ED Адрес объекта не указан, используем fallback")
         address = "Адрес не указан"
-
-    logger.info(f"🏠 Адрес объекта для подписи: {address}")
 
     today = datetime.now()
     russian_date = format_date(today, format='d MMMM y', locale='ru')
@@ -18,11 +23,27 @@ async def send_media_group(photos, address: str = "") -> bool:
         f"\U0001F4C5 Дата: {russian_date}"
     )
 
+    media = []
+    for idx, url in enumerate(photos):
+        media.append({
+            "type": "photo",
+            "media": url,
+            "caption": caption if idx == 0 else "",
+            "parse_mode": "HTML"
+        })
+
     try:
-        logger.info(f"📤 Отправка {len(photos)} фото в Telegram с подписью: {caption}")
-        await asyncio.sleep(1)  # Заглушка вместо реальной отправки в Telegram
-        logger.success(f"✅ Фото отправлены в Telegram ({len(photos)} шт)")
-        return True
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMediaGroup",
+                json={
+                    "chat_id": TG_CHAT_ID,
+                    "media": media
+                }
+            )
+            if resp.status_code == 200:
+                logger.success(f"✅ Фото отправлены в Telegram ({len(photos)} шт)")
+            else:
+                logger.error(f"❌ Ошибка отправки в Telegram: {resp.text}")
     except Exception as e:
-        logger.error(f"❌ Ошибка отправки в Telegram: {e}")
-        return False
+        logger.error(f"❌ Ошибка HTTP при отправке в Telegram: {e}")
