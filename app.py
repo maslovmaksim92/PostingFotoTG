@@ -26,7 +26,6 @@ async def register_folder(payload: FolderPayload):
         logger.info(f"📥 Вебхук получен: deal={deal_id}, folder={folder_id}")
 
         async with httpx.AsyncClient() as client:
-            # Получаем список файлов в папке
             resp = await client.post(f"{BITRIX_WEBHOOK}/disk.folder.getchildren", json={"id": folder_id})
             children = resp.json().get("result", [])
             file_list = [f for f in children if f.get("DOWNLOAD_URL")]
@@ -46,7 +45,6 @@ async def register_folder(payload: FolderPayload):
                 else:
                     logger.warning(f"❌ Ошибка скачивания {name}: {file_resp.status_code}")
 
-            # Отправляем все файлы за один запрос
             update = await client.post(f"{BITRIX_WEBHOOK}/crm.deal.update", json={
                 "id": deal_id,
                 "fields": {
