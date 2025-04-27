@@ -11,7 +11,7 @@ last_processed = {}
 async def deal_update(request: Request):
     try:
         data = await request.form()
-        logger.warning("🔞 [deal_update] Сырой payload: {}", dict(data))
+        logger.warning("🐞 [deal_update] Сырой payload: {}", dict(data))
 
         deal_id = data.get("data[FIELDS][ID]")
         if not deal_id:
@@ -26,7 +26,7 @@ async def deal_update(request: Request):
 
         last_processed[deal_id] = now
 
-        fields = get_deal_fields(deal_id)
+        fields = await get_deal_fields(int(deal_id))
         logger.debug("📋 Все поля сделки {}: {}", deal_id, fields)
 
         folder_id = fields.get("UF_CRM_1743273170850")
