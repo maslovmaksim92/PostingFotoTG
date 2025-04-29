@@ -121,3 +121,13 @@ async def upload_files_to_deal(deal_id: int, folder_id: int) -> List[Dict]:
 
     await attach_media_to_deal(deal_id, files)
     return files
+
+async def check_files_attached(deal_id: int) -> bool:
+    try:
+        deal = await get_deal_fields(deal_id)
+        attached = deal.get(PHOTO_FIELD_CODE, [])
+        logger.debug(f"📋 Состояние файлов в сделке {deal_id}: {attached}")
+        return bool(attached)
+    except Exception as e:
+        logger.error(f"❌ Ошибка при проверке прикрепленных файлов: {e}")
+        return False
