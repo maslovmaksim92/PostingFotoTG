@@ -5,7 +5,8 @@ from datetime import datetime
 from babel.dates import format_date
 from dotenv import load_dotenv
 
-from gpt import generate_caption  # 🧠 Подключаем GPT генератор
+from gpt import generate_caption
+from bitrix import get_address_from_deal
 
 load_dotenv()
 
@@ -19,24 +20,29 @@ async def send_media_group(photos: list[str], deal_id: int):
         return
 
     try:
-        address = "Не указан"
+        address = await get_address_from_deal(deal_id)
         russian_date = format_date(datetime.now(), format='d MMMM y', locale='ru')
 
-        # 🧠 Получаем подпись от GPT
         try:
             gpt_text = await generate_caption(deal_id)
             if not gpt_text:
                 raise ValueError("GPT вернул пустую строку")
         except Exception as e:
             logger.warning(f"⚠️ GPT не сработал, используем fallback: {e}")
-            gpt_text = f"Уборка завершена.\n📍 Адрес: неизвестен\n📅 Дата: {russian_date}"
+            gpt_text = "Спасибо за чистоту и заботу о доме!"
 
-        # ⬇️ caption добавляется только к первому фото
+        caption = (
+            f"\U0001F9F9 Уборка завершена\n"
+            f"\U0001F3E0 Адрес: {address or 'не указан'}\n"
+            f"\U0001F4C5 Дата: {russian_date}\n\n"
+            f"{gpt_text}"
+        )
+
         media = [
             {
                 "type": "photo",
                 "media": url,
-                **({"caption": gpt_text, "parse_mode": "HTML"} if idx == 0 else {})
+                **({"caption": caption, "parse_mode": "HTML"} if idx == 0 else {})
             }
             for idx, url in enumerate(photos)
         ]
@@ -53,4 +59,4 @@ async def send_media_group(photos: list[str], deal_id: int):
             logger.error(f"❌ Ошибка Telegram: {resp.status_code}, {await resp.text()}")
 
     except Exception as e:
-        logger.exception(f"❌ Ошибка при отправке медиа в Telegram: {e}")
+        logger.exception(f"❌ Ошибка при отправке в Telegram: {e}")
