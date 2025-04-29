@@ -4,42 +4,43 @@ from loguru import logger
 
 async def upload_folder_to_deal(deal_id: int, folder_id: int):
     try:
+        # 1. Получаем файлы из папки
         files = await get_files_from_folder(folder_id)
         if not files:
             logger.warning(f"⚠️ Нет файлов в папке {folder_id} для сделки {deal_id}")
             return
 
+        # 2. Прикрепляем файлы по их ID
         attached_ids = await attach_media_to_deal(deal_id, files)
-
         if attached_ids:
             logger.info(f"💎 Файлы прикреплены по ID: {attached_ids}")
         else:
             logger.warning(f"⚠️ Файлы не прикрепились по ID, возможно потребуется доп. обработка")
 
-        # Подготовка ссылок на файлы
+        # 3. Подготавливаем ссылки на фото
         photo_urls = []
         for f in files:
             url = f.get("download_url")
-            if url and "&auth=" in url:
-                url = url.replace("&auth=", "?auth=")
             if url:
+                url = url.replace("&auth=", "?auth=") if "&auth=" in url else url
                 photo_urls.append(url)
 
         if not photo_urls:
-            logger.warning(f"⚠️ Нет ссылок на фото для сделки {deal_id}")
+            logger.warning(f"⚠️ Нет доступных ссылок на фото для сделки {deal_id}")
             return
 
+        # 4. Отправляем фото в Telegram
         logger.info(f"📤 Пытаемся отправить фото в Telegram для сделки {deal_id}")
         try:
             await send_media_group(photo_urls, "")
         except Exception as e:
-            logger.error(f"❌ Ошибка отправки в Telegram: {e}")
+            logger.error(f"❌ Ошибка отправки фото в Telegram: {e}")
 
-        # Сохраняем ссылки в карточку сделки
+        # 5. Сохраняем ссылки на фото в сделке
         await update_file_links_in_deal(deal_id, photo_urls)
-        logger.success(f"✅ Ссылки на фото сохранены в сделке {deal_id}")
+        logger.success(f"✅ Ссылки на фото успешно сохранены в сделке {deal_id}")
 
-        logger.success(f"✅ Файлы из папки {folder_id} прикреплены и отправлены к сделке {deal_id}")
+        logger.success(f"✅ Все файлы из папки {folder_id} успешно обработаны для сделки {deal_id}")
 
     except Exception as e:
         logger.error(f"❌ Ошибка загрузки файлов для сделки {deal_id}: {e}")
