@@ -11,9 +11,6 @@ TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 TG_BOT_TOKEN = os.getenv("TG_GITHUB_BOT")
 
 async def send_media_group(photos, address: str):
-    """
-    Отправляет группу фото в Telegram с подписью.
-    """
     if not address:
         logger.warning("📭 Адрес объекта не указан, используем fallback")
         address = "Адрес не указан"
@@ -40,10 +37,7 @@ async def send_media_group(photos, address: str):
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMediaGroup",
-                json={
-                    "chat_id": TG_CHAT_ID,
-                    "media": media
-                }
+                json={"chat_id": TG_CHAT_ID, "media": media}
             )
             if resp.status_code == 200:
                 logger.success(f"✅ Фото отправлены в Telegram ({len(photos)} шт)")
