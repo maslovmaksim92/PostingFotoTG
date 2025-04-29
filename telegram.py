@@ -10,27 +10,31 @@ load_dotenv()
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 TG_BOT_TOKEN = os.getenv("TG_GITHUB_BOT")
 
-async def send_media_group(photos, address):
+async def send_media_group(photos, address: str):
+    """
+    Отправляет группу фото в Telegram с подписью.
+    """
     if not address:
-        logger.warning("\U0001F4ED Адрес объекта не указан, используем fallback")
+        logger.warning("📭 Адрес объекта не указан, используем fallback")
         address = "Адрес не указан"
 
     today = datetime.now()
     russian_date = format_date(today, format='d MMMM y', locale='ru')
     caption = (
-        f"\U0001F9F9 Уборка завершена\n"
-        f"\U0001F3E0 Адрес: {address}\n"
-        f"\U0001F4C5 Дата: {russian_date}"
+        f"🧹 Уборка завершена\n"
+        f"🏠 Адрес: {address}\n"
+        f"📅 Дата: {russian_date}"
     )
 
-    media = []
-    for idx, url in enumerate(photos):
-        media.append({
+    media = [
+        {
             "type": "photo",
             "media": url,
             "caption": caption if idx == 0 else "",
             "parse_mode": "HTML"
-        })
+        }
+        for idx, url in enumerate(photos)
+    ]
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -46,4 +50,4 @@ async def send_media_group(photos, address):
             else:
                 logger.error(f"❌ Ошибка отправки в Telegram: {resp.text}")
     except Exception as e:
-        logger.error(f"❌ Ошибка HTTP при отправке в Telegram: {e}")
+        logger.exception(f"❌ Ошибка HTTP при отправке в Telegram: {e}")
