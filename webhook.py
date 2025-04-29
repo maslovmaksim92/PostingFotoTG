@@ -5,7 +5,6 @@ from bitrix import get_deal_fields
 from services import upload_folder_to_deal
 
 router = APIRouter()
-
 last_processed = {}
 
 @router.post("/webhook/deal_update")
