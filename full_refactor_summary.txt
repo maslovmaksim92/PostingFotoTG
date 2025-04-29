@@ -1,35 +1,242 @@
-✅ Обновлена структура проекта PostingFotoTG
+### 📄 Финальная структура файлов проекта PostingFotoTG
 
-# Новые оставшиеся файлы:
-- app.py
-- webhook.py
-- services.py
-- bitrix.py
-- telegram.py
-- gpt.py
-- config.py
-- utils/formatting.py
-- utils/prompts.py
-- requirements.txt
-- tests/
+> Проверено и синхронизировано с GitHub (main)
 
-# Удалены файлы:
-- bitrix_upload.py
-- services/bitrix/attach_media_to_deal.py
-- services/deal_notifier.py
-- services/optimize_upload.py
-- services/stage_resolver.py
-- debug/files_summary.py
-- utils/bitrix.py
-- utils/telegram_client.py
-- utils/folder_db.py
-- utils/tg.py
-- utils.py
+---
 
-# Изменено:
-- telegram.py теперь объединяет отправку фото, видео, альбомов
-- bitrix.py теперь содержит как sync, так и async работу с файлами
-- fallback_text перенесён в utils/formatting.py
-- Импорты очищены и унифицированы
+#### ✅ 1. `bitrix.py`
+```python
+import os
+import httpx
+import asyncio
+from typing import List, Dict
+from loguru import logger
+from dotenv import load_dotenv
 
-🎯 Проект готов к деплою и продакшену!
+load_dotenv()
+
+BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK")
+PHOTO_FIELD_CODE = os.getenv("FILE_FIELD_ID") or "UF_CRM_1740994275251"
+FOLDER_FIELD_CODE = os.getenv("FOLDER_FIELD_ID") or "UF_CRM_1743273170850"
+ADDRESS_FIELD_CODE = "UF_CRM_1669561599956"
+FILE_LINKS_FIELD_CODE = "UF_CRM_1745671890168"
+
+async def call_bitrix_method(method: str, params: dict = None) -> dict:
+    url = f"{BITRIX_WEBHOOK}/{method}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(url, json=params or {})
+        response.raise_for_status()
+        return response.json()
+
+async def get_deal_fields(deal_id: int) -> Dict:
+    response = await call_bitrix_method("crm.deal.get", {"ID": deal_id})
+    return response.get("result", {})
+
+async def get_address_from_deal(deal_id: int) -> str:
+    fields = await get_deal_fields(deal_id)
+    raw = fields.get(ADDRESS_FIELD_CODE, "")
+    address = raw.split("|")[0] if "|" in raw else raw
+    return address.replace(",", "").replace("|", "").replace("\\", "").strip()
+
+async def get_files_from_folder(folder_id: int) -> List[Dict]:
+    response = await call_bitrix_method("disk.folder.getchildren", {"id": folder_id})
+    result = response.get("result", [])
+    logger.debug(f"🔍 Найдено файлов в папке {folder_id}: {len(result)} файлов")
+    return [
+        {
+            "id": item["ID"],
+            "name": item["NAME"],
+            "size": item.get("SIZE", 0),
+            "download_url": item.get("DOWNLOAD_URL")
+        }
+        for item in result if item["TYPE"] == "file"
+    ]
+
+async def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
+    logger.info(f"📎 Прикрепление файлов напрямую по ID к сделке {deal_id}")
+    if not files:
+        logger.warning(f"⚠️ Нет файлов для прикрепления в сделке {deal_id}")
+        return []
+
+    file_ids = [int(file["id"]) for file in files if file.get("id")]
+    if not file_ids:
+        logger.warning(f"⚠️ Нет действительных ID файлов для прикрепления к сделке {deal_id}")
+        return []
+
+    payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
+    await call_bitrix_method("crm.deal.update", payload)
+    return file_ids
+
+async def check_files_attached(deal_id: int) -> bool:
+    try:
+        deal = await get_deal_fields(deal_id)
+        attached = deal.get(PHOTO_FIELD_CODE, [])
+        logger.debug(f"📋 Состояние файлов в сделке {deal_id}: {attached}")
+        return bool(attached)
+    except Exception as e:
+        logger.error(f"❌ Ошибка при проверке прикрепленных файлов: {e}")
+        return False
+
+async def update_file_links_in_deal(deal_id: int, links: List[str]):
+    if not links:
+        logger.warning(f"⚠️ Нет ссылок для обновления в сделке {deal_id}")
+        return
+    payload = {"id": deal_id, "fields": {FILE_LINKS_FIELD_CODE: links}}
+    await call_bitrix_method("crm.deal.update", payload)
+    logger.success(f"✅ Ссылки успешно добавлены в сделку {deal_id}")
+```
+
+---
+
+#### ✅ 2. `services.py`
+```python
+from bitrix import get_files_from_folder, attach_media_to_deal, update_file_links_in_deal, check_files_attached
+from telegram import send_media_group
+from loguru import logger
+import asyncio
+
+async def upload_folder_to_deal(deal_id: int, folder_id: int):
+    try:
+        files = await get_files_from_folder(folder_id)
+        if not files:
+            logger.warning(f"⚠️ Нет файлов в папке {folder_id} для сделки {deal_id}")
+            return
+
+        attached_ids = await attach_media_to_deal(deal_id, files)
+        if attached_ids:
+            logger.info(f"💎 Файлы прикреплены по ID: {attached_ids}")
+        else:
+            logger.warning(f"⚠️ Файлы не прикрепились по ID")
+
+        await asyncio.sleep(2)
+        if not await check_files_attached(deal_id):
+            logger.warning(f"⚠️ Файлы всё ещё не прикреплены, повтор...")
+            await asyncio.sleep(2)
+            await attach_media_to_deal(deal_id, files)
+
+        photo_urls = [f.get("download_url").replace("&auth=", "?auth=") for f in files if f.get("download_url")]
+        if not photo_urls:
+            logger.warning(f"⚠️ Нет доступных ссылок на фото для сделки {deal_id}")
+            return
+
+        await send_media_group(photo_urls, "")
+        await update_file_links_in_deal(deal_id, photo_urls)
+        logger.success(f"✅ Все файлы обработаны для сделки {deal_id}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка загрузки файлов для сделки {deal_id}: {e}")
+```
+
+---
+
+#### ✅ 3. `webhook.py`
+```python
+import time
+from fastapi import APIRouter, Request
+from loguru import logger
+from bitrix import get_deal_fields
+from services import upload_folder_to_deal
+
+router = APIRouter()
+last_processed = {}
+
+@router.post("/webhook/deal_update")
+async def deal_update(request: Request):
+    try:
+        data = await request.form()
+        logger.warning("🐞 [deal_update] Сырой payload: {}", dict(data))
+
+        deal_id = data.get("data[FIELDS][ID]")
+        if not deal_id:
+            logger.error("❌ Ошибка: отсутствует deal_id в данных запроса")
+            return {"status": "error", "message": "Deal ID not provided"}
+
+        now = time.time()
+        if deal_id in last_processed and now - last_processed[deal_id] < 30:
+            logger.warning("⏳ Повторный вызов для сделки {} — пропускаем", deal_id)
+            return {"status": "skipped", "reason": "duplicate request"}
+
+        last_processed[deal_id] = now
+        fields = await get_deal_fields(int(deal_id))
+        folder_id = fields.get("UF_CRM_1743273170850")
+
+        if not folder_id:
+            logger.error("❗ Нет папки у сделки {}", deal_id)
+            return {"status": "error", "message": "Folder ID not found in deal"}
+
+        await upload_folder_to_deal(int(deal_id), int(folder_id))
+        logger.success("✅ Файлы успешно прикреплены к сделке {}", deal_id)
+        return {"status": "ok", "deal_id": deal_id}
+    except Exception as e:
+        logger.exception("❌ Критическая ошибка обработки сделки")
+        return {"status": "error", "message": f"Internal server error: {str(e)}"}
+```
+
+---
+
+#### ✅ 4. `telegram.py`
+```python
+import os
+import httpx
+from loguru import logger
+from dotenv import load_dotenv
+from datetime import datetime
+from babel.dates import format_date
+
+load_dotenv()
+
+TG_CHAT_ID = os.getenv("TG_CHAT_ID")
+TG_BOT_TOKEN = os.getenv("TG_GITHUB_BOT")
+
+async def send_media_group(photos, address: str):
+    if not address:
+        logger.warning("📭 Адрес объекта не указан, используем fallback")
+        address = "Адрес не указан"
+
+    today = datetime.now()
+    russian_date = format_date(today, format='d MMMM y', locale='ru')
+    caption = (
+        f"🧹 Уборка завершена\n"
+        f"🏠 Адрес: {address}\n"
+        f"📅 Дата: {russian_date}"
+    )
+
+    media = [
+        {
+            "type": "photo",
+            "media": url,
+            "caption": caption if idx == 0 else "",
+            "parse_mode": "HTML"
+        }
+        for idx, url in enumerate(photos)
+    ]
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMediaGroup",
+                json={"chat_id": TG_CHAT_ID, "media": media}
+            )
+            if resp.status_code == 200:
+                logger.success(f"✅ Фото отправлены в Telegram ({len(photos)} шт)")
+            else:
+                logger.error(f"❌ Ошибка отправки в Telegram: {resp.text}")
+    except Exception as e:
+        logger.exception(f"❌ Ошибка HTTP при отправке в Telegram: {e}")
+```
+
+---
+
+#### ✅ 5. `app.py`
+```python
+from fastapi import FastAPI
+from webhook import router as webhook_router
+from loguru import logger
+
+app = FastAPI()
+app.include_router(webhook_router)
+logger.info("✅ FastAPI приложение успешно стартовало")
+```
+
+---
+
+📌 Всё готово. Эти версии можно брать за **стартовую точку нового АТ** или для контроля актуального состояния.
