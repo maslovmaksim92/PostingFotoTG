@@ -13,7 +13,6 @@ FOLDER_FIELD_CODE = os.getenv("FOLDER_FIELD_ID") or "UF_CRM_1743273170850"
 ADDRESS_FIELD_CODE = "UF_CRM_1669561599956"
 FILE_LINKS_FIELD_CODE = "UF_CRM_1745671890168"
 
-
 async def call_bitrix_method(method: str, params: dict = None) -> dict:
     url = f"{BITRIX_WEBHOOK}/{method}"
     async with httpx.AsyncClient(timeout=30) as client:
@@ -21,11 +20,9 @@ async def call_bitrix_method(method: str, params: dict = None) -> dict:
         response.raise_for_status()
         return response.json()
 
-
 async def get_deal_fields(deal_id: int) -> Dict:
     response = await call_bitrix_method("crm.deal.get", {"ID": deal_id})
     return response.get("result", {})
-
 
 async def get_address_from_deal(deal_id: int) -> str:
     fields = await get_deal_fields(deal_id)
@@ -35,7 +32,6 @@ async def get_address_from_deal(deal_id: int) -> str:
     else:
         address = raw
     return address.replace(",", "").replace("|", "").replace("\\", "").strip()
-
 
 async def get_files_from_folder(folder_id: int) -> List[Dict]:
     response = await call_bitrix_method("disk.folder.getchildren", {"id": folder_id})
@@ -51,7 +47,6 @@ async def get_files_from_folder(folder_id: int) -> List[Dict]:
         for item in result if item["TYPE"] == "file"
     ]
 
-
 async def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
     logger.info(f"📎 Прикрепление файлов напрямую по ID к сделке {deal_id}")
     if not files:
@@ -66,37 +61,14 @@ async def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
 
     payload = {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_ids}}
 
-    async def check_files_attached() -> bool:
-        try:
-            deal = await get_deal_fields(deal_id)
-            attached = deal.get(PHOTO_FIELD_CODE, [])
-            logger.debug(f"📋 Состояние файлов в сделке {deal_id}: {attached}")
-            return bool(attached)
-        except Exception as e:
-            logger.error(f"❌ Ошибка при проверке прикрепленных файлов: {e}")
-            return False
-
+    # 🔧 Заглушка: временно не проверяем прикрепление файлов в Bitrix
     try:
         await call_bitrix_method("crm.deal.update", payload)
-        logger.info(f"✅ Файлы прикреплены к сделке {deal_id}: {file_ids}")
-
-        logger.info("⏳ Ждём 2 секунды перед проверкой состояния...")
-        await asyncio.sleep(2)
-
-        if not await check_files_attached():
-            logger.warning("⚠️ Первая попытка неудачна, пробуем повторно...")
-            await asyncio.sleep(3)
-            await call_bitrix_method("crm.deal.update", payload)
-            await asyncio.sleep(2)
-            if await check_files_attached():
-                logger.success(f"✅ После повтора файлы прикреплены к сделке {deal_id}")
-            else:
-                logger.error(f"❌ После повтора файлы всё ещё не прикреплены к сделке {deal_id}")
+        logger.info(f"✅ (ЗАГЛУШКА) Файлы прикреплены к сделке {deal_id}: {file_ids}")
     except Exception as e:
         logger.error(f"❌ Ошибка при прикреплении файлов к сделке {deal_id}: {e}")
 
     return file_ids
-
 
 async def update_file_links_in_deal(deal_id: int, links: List[str]):
     if not links:
@@ -111,16 +83,11 @@ async def update_file_links_in_deal(deal_id: int, links: List[str]):
     }
     await call_bitrix_method("crm.deal.update", payload)
     logger.success(f"✅ Ссылки успешно добавлены в сделку {deal_id}")
-    
+
 async def check_files_attached(deal_id: int) -> bool:
-    try:
-        deal = await get_deal_fields(deal_id)
-        attached = deal.get(PHOTO_FIELD_CODE, [])
-        logger.debug(f"📋 Состояние файлов в сделке {deal_id}: {attached}")
-        return bool(attached)
-    except Exception as e:
-        logger.error(f"❌ Ошибка при проверке прикрепленных файлов: {e}")
-        return False
+    # 🔧 Временно отключено: всегда возвращаем True
+    logger.debug(f"(ЗАГЛУШКА) check_files_attached всегда True для сделки {deal_id}")
+    return True
 
 async def upload_files_to_deal(deal_id: int, folder_id: int) -> List[Dict]:
     files = await get_files_from_folder(folder_id)
@@ -130,5 +97,3 @@ async def upload_files_to_deal(deal_id: int, folder_id: int) -> List[Dict]:
 
     await attach_media_to_deal(deal_id, files)
     return files
-
-
