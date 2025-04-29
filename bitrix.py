@@ -111,7 +111,16 @@ async def update_file_links_in_deal(deal_id: int, links: List[str]):
     }
     await call_bitrix_method("crm.deal.update", payload)
     logger.success(f"✅ Ссылки успешно добавлены в сделку {deal_id}")
-
+    
+async def check_files_attached(deal_id: int) -> bool:
+    try:
+        deal = await get_deal_fields(deal_id)
+        attached = deal.get(PHOTO_FIELD_CODE, [])
+        logger.debug(f"📋 Состояние файлов в сделке {deal_id}: {attached}")
+        return bool(attached)
+    except Exception as e:
+        logger.error(f"❌ Ошибка при проверке прикрепленных файлов: {e}")
+        return False
 
 async def upload_files_to_deal(deal_id: int, folder_id: int) -> List[Dict]:
     files = await get_files_from_folder(folder_id)
@@ -122,12 +131,4 @@ async def upload_files_to_deal(deal_id: int, folder_id: int) -> List[Dict]:
     await attach_media_to_deal(deal_id, files)
     return files
 
-async def check_files_attached(deal_id: int) -> bool:
-    try:
-        deal = await get_deal_fields(deal_id)
-        attached = deal.get(PHOTO_FIELD_CODE, [])
-        logger.debug(f"📋 Состояние файлов в сделке {deal_id}: {attached}")
-        return bool(attached)
-    except Exception as e:
-        logger.error(f"❌ Ошибка при проверке прикрепленных файлов: {e}")
-        return False
+
