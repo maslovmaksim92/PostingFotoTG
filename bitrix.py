@@ -34,8 +34,7 @@ async def get_address_from_deal(deal_id: int) -> str:
         address = raw.split("|")[0]
     else:
         address = raw
-    address = address.replace(",", "").replace("|", "").replace("\\", "").strip()
-    return address
+    return address.replace(",", "").replace("|", "").replace("\\", "").strip()
 
 
 async def get_files_from_folder(folder_id: int) -> List[Dict]:
@@ -80,10 +79,12 @@ async def attach_media_to_deal(deal_id: int, files: List[Dict]) -> List[int]:
     try:
         await call_bitrix_method("crm.deal.update", payload)
         logger.info(f"✅ Файлы прикреплены к сделке {deal_id}: {file_ids}")
+
+        logger.info("⏳ Ждём 2 секунды перед проверкой состояния...")
         await asyncio.sleep(2)
 
         if not await check_files_attached():
-            logger.warning(f"⚠️ Первая попытка неудачна, пробуем повторно...")
+            logger.warning("⚠️ Первая попытка неудачна, пробуем повторно...")
             await asyncio.sleep(3)
             await call_bitrix_method("crm.deal.update", payload)
             await asyncio.sleep(2)
@@ -102,31 +103,21 @@ async def update_file_links_in_deal(deal_id: int, links: List[str]):
         logger.warning(f"⚠️ Нет ссылок для обновления в сделке {deal_id}")
         return
 
-    payload = {"id": deal_id, "fields": {FILE_LINKS_FIELD_CODE: links}}
+    payload = {
+        "id": deal_id,
+        "fields": {
+            FILE_LINKS_FIELD_CODE: links
+        }
+    }
     await call_bitrix_method("crm.deal.update", payload)
     logger.success(f"✅ Ссылки успешно добавлены в сделку {deal_id}")
 
 
-async def upload_files_to_deal(deal_id: int, files: List[Dict]) -> List[str]:
-    file_data = []
-    for idx, f in enumerate(files):
-        url = f.get("download_url")
-        if url and "&auth=" in url:
-            url = url.replace("&auth=", "?auth=")
-        name = f.get("name") or f"file_{idx}.jpg"
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    encoded = resp.content.encode("base64")
-                    file_data.append({"fileData": [name, encoded]})
-        except Exception as e:
-            logger.error(f"❌ Ошибка скачивания {name}: {e}")
-
-    if not file_data:
-        logger.warning(f"⚠️ Нет загруженных файлов для сделки {deal_id}")
+async def upload_files_to_deal(deal_id: int, folder_id: int) -> List[Dict]:
+    files = await get_files_from_folder(folder_id)
+    if not files:
+        logger.warning(f"⚠️ Нет файлов в папке {folder_id} для сделки {deal_id}")
         return []
 
-    await call_bitrix_method("crm.deal.update", {"id": deal_id, "fields": {PHOTO_FIELD_CODE: file_data}})
-    logger.success(f"✅ Физически загружено файлов: {len(file_data)} в сделку {deal_id}")
-    return [f["fileData"][0] for f in file_data]
+    await attach_media_to_deal(deal_id, files)
+    return files
