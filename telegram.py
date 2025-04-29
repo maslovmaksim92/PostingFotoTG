@@ -12,6 +12,7 @@ load_dotenv()
 
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 TG_BOT_TOKEN = os.getenv("TG_GITHUB_BOT")
+TG_THREAD_ID = 2636  # <--- добавлен ID топика
 
 
 async def send_media_group(photos: list[str], deal_id: int):
@@ -50,11 +51,15 @@ async def send_media_group(photos: list[str], deal_id: int):
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMediaGroup",
-                json={"chat_id": TG_CHAT_ID, "media": media}
+                json={
+                    "chat_id": TG_CHAT_ID,
+                    "message_thread_id": TG_THREAD_ID,
+                    "media": media
+                }
             )
 
         if resp.status_code == 200:
-            logger.success(f"✅ Фото отправлены в Telegram ({len(photos)} шт)")
+            logger.success(f"✅ Фото отправлены в Telegram ({len(photos)} шт) → в топик {TG_THREAD_ID}")
         else:
             logger.error(f"❌ Ошибка Telegram: {resp.status_code}, {await resp.text()}")
 
