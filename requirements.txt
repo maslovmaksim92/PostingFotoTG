@@ -12,3 +12,4 @@ python-dotenv==1.1.0
 requests==2.31.0
 babel==2.17.0
 python-multipart==0.0.20
+aiogram==3.20.0.post0
