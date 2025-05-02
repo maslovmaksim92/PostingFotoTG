@@ -29,7 +29,7 @@ async def send_media_group(photos: list[str], deal_id: int):
             if not gpt_text:
                 raise ValueError("GPT вернул пустую строку")
         except Exception as e:
-            logger.warning(f"⚠️ GPT не сработал, используем fallback: {e}")
+            logger.warning(f"⚠️ GPT не сработал, fallback: {e}")
             gpt_text = "Спасибо за чистоту и заботу о доме!"
 
         caption = (
@@ -58,10 +58,11 @@ async def send_media_group(photos: list[str], deal_id: int):
                 }
             )
 
-        if resp.status_code == 200:
-            logger.success(f"✅ Фото отправлены в Telegram ({len(photos)} шт) → в топик {TG_THREAD_ID}")
-        else:
-            logger.error(f"❌ Ошибка Telegram: {resp.status_code}, {await resp.text()}")
+            if resp.status_code == 200:
+                logger.success(f"✅ Фото отправлены в Telegram ({len(photos)} шт) → в топик {TG_THREAD_ID}")
+            else:
+                response_text = await resp.text()
+                logger.error(f"❌ Ошибка Telegram: {resp.status_code}, {response_text}")
 
     except Exception as e:
         logger.exception(f"❌ Ошибка при отправке в Telegram: {e}")
