@@ -12,7 +12,7 @@ load_dotenv()
 
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 TG_BOT_TOKEN = os.getenv("TG_GITHUB_BOT")
-TG_THREAD_ID = 2636  # <--- добавлен ID топика
+TG_THREAD_ID = 2636
 
 
 async def send_media_group(photos: list[str], deal_id: int):
@@ -61,8 +61,7 @@ async def send_media_group(photos: list[str], deal_id: int):
             if resp.status_code == 200:
                 logger.success(f"✅ Фото отправлены в Telegram ({len(photos)} шт) → в топик {TG_THREAD_ID}")
             else:
-                response_text = await resp.text()
-                logger.error(f"❌ Ошибка Telegram: {resp.status_code}, {response_text}")
+                logger.error(f"❌ Ошибка Telegram: {resp.status_code}, {resp.text}")
 
     except Exception as e:
         logger.exception(f"❌ Ошибка при отправке в Telegram: {e}")
