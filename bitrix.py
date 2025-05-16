@@ -93,13 +93,17 @@ async def upload_files_to_deal(deal_id: int, folder_id: int) -> List[Dict]:
     files = await get_files_from_folder(folder_id)
     if not files:
         logger.warning(f"⚠️ Нет файлов в папке {folder_id} для сделки {deal_id}")
+        
+        # ✅ Добавлено: генерация и отправка GPT-сообщения даже без фото
         try:
             from utils.telegram_client import send_photos_batch
             address = await get_address_from_deal(deal_id)
             await send_photos_batch([], address=address)
-            logger.info(f"📤 Отправлено fallback-сообщение в Telegram по сделке {deal_id}")
+            logger.info(f"📤 Отправлено GPT-сообщение в Telegram по сделке {deal_id} без фото")
         except Exception as e:
-            logger.error(f"❌ Ошибка при отправке fallback в Telegram: {e}")
+            logger.error(f"❌ Ошибка при отправке текста без фото в Telegram: {e}")
+        
         return []
+
     await attach_media_to_deal(deal_id, files)
     return files
