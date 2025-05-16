@@ -4,6 +4,7 @@ import asyncio
 from typing import List, Dict
 from loguru import logger
 from dotenv import load_dotenv
+from utils.telegram_client import send_photos_batch  # ✅ Добавлено
 
 load_dotenv()
 
@@ -91,9 +92,19 @@ async def check_files_attached(deal_id: int) -> bool:
 
 async def upload_files_to_deal(deal_id: int, folder_id: int) -> List[Dict]:
     files = await get_files_from_folder(folder_id)
-    if not files:
-        logger.warning(f"⚠️ Нет файлов в папке {folder_id} для сделки {deal_id}")
-        return []
+    address = await get_address_from_deal(deal_id)
+    photo_urls = [f["download_url"] for f in files if f.get("download_url")]
 
-    await attach_media_to_deal(deal_id, files)
+    if files:
+        await attach_media_to_deal(deal_id, files)
+    else:
+        logger.warning(f"⚠️ Нет файлов в папке {folder_id} для сделки {deal_id}")
+
+    # ✅ Отправляем Telegram-отчёт даже при отсутствии файлов
+    try:
+        await send_photos_batch(photo_urls, address=address)
+        logger.info(f"📤 Отчёт по сделке {deal_id} отправлен в Telegram")
+    except Exception as e:
+        logger.error(f"❌ Ошибка отправки в Telegram: {e}")
+
     return files
