@@ -1,67 +1,67 @@
 import os
-import asyncio
-from aiogram import Router, F, types
+from aiogram import Bot, Dispatcher, Router, types
 from aiogram.enums import ParseMode
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.filters import Command
+from aiogram.client.default import DefaultBotProperties
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputFile, InputMediaPhoto
 from agent_bot.prompts import get_answer
 
-# === Отдельный router для polling ===
-router_polling = Router()
+bot = Bot(
+    token=os.getenv("AGENT_BOT_TOKEN"),
+    default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+)
+dp = Dispatcher()
+router = Router()
+dp.include_router(router)
 
-# === Кнопки ===
 main_kb = ReplyKeyboardMarkup(
     resize_keyboard=True,
     keyboard=[
-        [KeyboardButton(text="📑 Получить КП")],
-        [KeyboardButton(text="❓ Задать вопрос")],
-        [KeyboardButton(text="📷 Фото объекта")],
-        [KeyboardButton(text="📬 Оставить заявку")],
+        [KeyboardButton(text="\ud83d\udcc1 Оставить заявку")],
+        [KeyboardButton(text="\ud83d\udcc2 Получить КП")],
+        [KeyboardButton(text="\ud83d\udcf7 Фото объекта")],
+        [KeyboardButton(text="\u2753 Задать вопрос")],
     ]
 )
 
-# === Обработчики ===
-
-@router_polling.message(Command("start"))
+@router.message(commands=["start"])
 async def start_handler(msg: Message):
     await msg.answer(
         "Привет! Я бот по продаже объекта недвижимости в Калуге.\n\n"
-        "🏢 *Гостиница 1089 м² + земля 815 м²*\n"
-        "💰 *Цена*: 45,1 млн ₽\n"
-        "📍 *Адрес*: Калуга, пер. Сельский, 8а\n\n"
+        "\ud83c\udfe2 *Гостиница 1089 м\u00b2 + земля 815 м\u00b2*\n"
+        "\ud83d\udcb0 *Цена*: 45,1 млн \u20bd\n"
+        "\ud83d\udccd *Адрес*: Калуга, пер. Сельский, 8а\n\n"
         "Выберите действие:",
         reply_markup=main_kb
     )
 
-@router_polling.message(F.text == "📑 Получить КП")
+@router.message(lambda m: m.text == "\ud83d\udcc2 Получить КП")
 async def send_presentation(msg: Message):
     pdf_path = "agent_bot/templates/Presentation GAB Kaluga.pdf"
     await msg.answer("Вот презентация объекта:")
-    await msg.answer_document(types.FSInputFile(pdf_path))
+    await msg.answer_document(FSInputFile(pdf_path))
 
-@router_polling.message(F.text == "📷 Фото объекта")
+@router.message(lambda m: m.text == "\ud83d\udcf7 Фото объекта")
 async def send_photos(msg: Message):
-    folder = "agent_bot/images"
+    folder = "agent_bot/templates/images"
     photos = []
     for fname in os.listdir(folder):
         if fname.endswith((".jpg", ".png", ".jpeg")):
             file_path = os.path.join(folder, fname)
-            photos.append(types.InputMediaPhoto(types.FSInputFile(file_path)))
+            photo = FSInputFile(file_path)
+            photos.append(InputMediaPhoto(media=photo))
     if photos:
         await msg.answer_media_group(photos[:10])
     else:
-        await msg.answer("📂 Фото не найдены.")
+        await msg.answer("\ud83d\udcc2 Фото не найдены.")
 
-@router_polling.message(F.text == "❓ Задать вопрос")
+@router.message(lambda m: m.text == "\u2753 Задать вопрос")
 async def prompt_question(msg: Message):
-    await msg.answer("🧠 Введите ваш вопрос, я постараюсь ответить.")
+    await msg.answer("\ud83e\udde0 Введите ваш вопрос, я постараюсь ответить.")
 
-@router_polling.message(F.text == "📬 Оставить заявку")
-async def warn_about_form(msg: Message):
-    await msg.answer("✏️ Сейчас откроется форма. Пожалуйста, укажите свои данные…")
-    # Здесь форма обрабатывается через form.py (уже подключён как отдельный router)
-
-@router_polling.message()
+@router.message()
 async def process_question(msg: Message):
+    if not msg.text:
+        await msg.answer("\u2757 Пожалуйста, отправьте текстовое сообщение.")
+        return
     answer = await get_answer(msg.text)
     await msg.answer(answer)
