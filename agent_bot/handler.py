@@ -4,6 +4,7 @@ from aiogram import Bot, Dispatcher, Router, types
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.filters import Command
 from agent_bot.prompts import get_answer
 
 # === Настройка бота и диспетчера ===
@@ -27,7 +28,7 @@ main_kb = ReplyKeyboardMarkup(
 
 # === Обработчики ===
 
-@router.message(commands=["start"])
+@router.message(Command("start"))
 async def start_handler(msg: Message):
     await msg.answer(
         "Привет! Я бот по продаже объекта недвижимости в Калуге.\n\n"
