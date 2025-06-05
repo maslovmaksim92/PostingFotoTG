@@ -1,55 +1,72 @@
-import asyncio
 import os
+import asyncio
 from aiogram import Bot, Dispatcher, Router, types
-from aiogram.types import Message
 from aiogram.enums import ParseMode
+from aiogram.client.default import DefaultBotProperties
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from agent_bot.prompts import get_answer
 
-router = Router()
-bot = Bot(token=os.getenv("AGENT_BOT_TOKEN"), parse_mode=ParseMode.MARKDOWN)
+# === Настройка бота и диспетчера ===
+bot = Bot(
+    token=os.getenv("AGENT_BOT_TOKEN"),
+    default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+)
 dp = Dispatcher()
+router = Router()
+dp.include_router(router)
 
-# === Команды ===
+# === Кнопки ===
+main_kb = ReplyKeyboardMarkup(
+    resize_keyboard=True,
+    keyboard=[
+        [KeyboardButton(text="📑 Получить КП")],
+        [KeyboardButton(text="❓ Задать вопрос")],
+        [KeyboardButton(text="📷 Фото объекта")],
+    ]
+)
+
+# === Обработчики ===
 
 @router.message(commands=["start"])
-async def cmd_start(message: Message):
-    await message.answer(
-        "Привет! Я бот по продаже объекта недвижимости в Калуге.\n\n🏢 *Гостиница 1089 м² + земля 815 м²*\n💰 *Цена*: 45,1 млн ₽\n📍 *Адрес*: Калуга, пер. Сельский, 8а\n\nВыберите действие:",
-        reply_markup=types.ReplyKeyboardMarkup(
-            keyboard=[
-                [types.KeyboardButton(text="📑 Получить КП")],
-                [types.KeyboardButton(text="❓ Задать вопрос")],
-                [types.KeyboardButton(text="📷 Фото")],
-            ],
-            resize_keyboard=True,
-        )
+async def start_handler(msg: Message):
+    await msg.answer(
+        "Привет! Я бот по продаже объекта недвижимости в Калуге.\n\n"
+        "🏢 *Гостиница 1089 м² + земля 815 м²*\n"
+        "💰 *Цена*: 45,1 млн ₽\n"
+        "📍 *Адрес*: Калуга, пер. Сельский, 8а\n\n"
+        "Выберите действие:",
+        reply_markup=main_kb
     )
 
-@router.message(lambda msg: msg.text == "📑 Получить КП")
-async def send_pdf(msg: Message):
-    await msg.answer("Вот презентация:")
-    await bot.send_document(msg.chat.id, types.FSInputFile("agent_bot/templates/Presentation GAB Kaluga.pdf"))
+@router.message(lambda m: m.text == "📑 Получить КП")
+async def send_presentation(msg: Message):
+    pdf_path = "agent_bot/templates/Presentation GAB Kaluga.pdf"
+    await msg.answer("Вот презентация объекта:")
+    await msg.answer_document(types.FSInputFile(pdf_path))
 
-@router.message(lambda msg: msg.text == "📷 Фото")
+@router.message(lambda m: m.text == "📷 Фото объекта")
 async def send_photos(msg: Message):
     folder = "agent_bot/templates/images"
-    media = []
-    for filename in os.listdir(folder):
-        path = os.path.join(folder, filename)
-        media.append(types.InputMediaPhoto(types.FSInputFile(path)))
-    await bot.send_media_group(msg.chat.id, media[:10])
+    photos = []
+    for fname in os.listdir(folder):
+        if fname.endswith((".jpg", ".png", ".jpeg")):
+            file_path = os.path.join(folder, fname)
+            photos.append(types.InputMediaPhoto(types.FSInputFile(file_path)))
+    if photos:
+        await msg.answer_media_group(photos[:10])
+    else:
+        await msg.answer("📂 Фото не найдены.")
 
-@router.message(lambda msg: msg.text == "❓ Задать вопрос")
-async def ask(msg: Message):
-    await msg.answer("Введите ваш вопрос:")
+@router.message(lambda m: m.text == "❓ Задать вопрос")
+async def prompt_question(msg: Message):
+    await msg.answer("🧠 Введите ваш вопрос, я постараюсь ответить.")
 
 @router.message()
-async def fallback(msg: Message):
-    response = await get_answer(msg.text)
-    await msg.answer(response)
+async def process_question(msg: Message):
+    answer = await get_answer(msg.text)
+    await msg.answer(answer)
 
-
+# === Запуск при старте FastAPI ===
 async def start_agent_bot():
-    dp.include_router(router)
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
