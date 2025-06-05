@@ -1,5 +1,4 @@
 import os
-import asyncio
 from aiogram import Bot, Dispatcher, Router, types, F
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -7,30 +6,23 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputF
 from agent_bot.prompts import get_answer
 from loguru import logger
 
-# === Настройка бота и диспетчера ===
 bot = Bot(
     token=os.getenv("AGENT_BOT_TOKEN"),
     default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
 )
-dp = Dispatcher()
+
 router_polling = Router()
 
-# === Подключение роутера к диспетчеру ===
-dp.include_router(router_polling)
-
-# === Кнопки ===
 main_kb = ReplyKeyboardMarkup(
     resize_keyboard=True,
     keyboard=[
         [KeyboardButton(text="📑 Получить КП")],
         [KeyboardButton(text="📷 Фото объекта")],
-        [KeyboardButton(text="🚀 Хочу предложить клиента")],
         [KeyboardButton(text="📩 Оставить заявку")],
+        [KeyboardButton(text="🚀 Хочу предложить клиента")],
         [KeyboardButton(text="❓ Задать вопрос")],
     ]
 )
-
-# === Обработчики ===
 
 @router_polling.message(F.text.lower() == "/start")
 async def start_handler(msg: Message):
@@ -44,9 +36,9 @@ async def start_handler(msg: Message):
         reply_markup=main_kb
     )
 
-@router_polling.message(F.text == "📁 Получить КП")
+@router_polling.message(F.text == "📑 Получить КП")
 async def send_presentation(msg: Message):
-    logger.info(f"📁 Пользователь {msg.from_user.id} запросил презентацию")
+    logger.info(f"📑 Пользователь {msg.from_user.id} запросил презентацию")
     pdf_path = "agent_bot/templates/Presentation GAB Kaluga.pdf"
     await msg.answer("Вот презентация объекта:")
     await msg.answer_document(FSInputFile(pdf_path))
@@ -85,26 +77,26 @@ async def send_contact_form(msg: Message):
     await msg.answer("✅ Заявка отправлена! Мы скоро с вами свяжемся.")
 
 @router_polling.message(F.text == "🚀 Хочу предложить клиента")
-async def handle_offer_client(msg: Message):
-    logger.info(f"🚀 Заявка от агента {msg.from_user.id}")
+async def send_agent_form(msg: Message):
+    logger.info(f"🚀 Агент/партнёр {msg.from_user.id} хочет предложить клиента")
     full_name = msg.from_user.full_name
     user_id = msg.from_user.id
     text = (
-        f"🚀 Новая заявка от агента:\n\n"
+        f"🚀 Партнёр хочет предложить клиента:\n\n"
         f"👤 Имя: {full_name}\n"
         f"🆔 Telegram ID: {user_id}\n"
         f"📨 Username: @{msg.from_user.username or 'нет'}\n\n"
-        f"⚠️ Проверьте — агент хочет предложить клиента."
+        f"📣 Проверь, есть ли у тебя прямой клиент. Мы работаем быстро, без воды. "
+        f"Если это ты — напиши нам прямо сейчас."
     )
     await bot.send_message(chat_id=os.getenv("TG_CHAT_ID"), text=text)
-    await msg.answer("✅ Спасибо! Мы на связи — скоро напишем.")
+    await msg.answer("✅ Принято! Мы свяжемся, если клиент интересен.")
 
 @router_polling.message(F.text == "❓ Задать вопрос")
 async def ask_question_prompt(msg: Message):
     logger.info(f"❓ Подсказка от бота для вопроса от {msg.from_user.id}")
     await msg.answer("🧠 Введите ваш вопрос — я постараюсь ответить.")
 
-# 🧠 Автоответ на любой текстовый вопрос
 @router_polling.message(F.text)
 async def process_question(msg: Message):
     if not msg.text:
