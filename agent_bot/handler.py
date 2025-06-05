@@ -15,12 +15,16 @@ bot = Bot(
 dp = Dispatcher()
 router_polling = Router()
 
+# === Подключение роутера к диспетчеру ===
+dp.include_router(router_polling)
+
 # === Кнопки ===
 main_kb = ReplyKeyboardMarkup(
     resize_keyboard=True,
     keyboard=[
         [KeyboardButton(text="📑 Получить КП")],
         [KeyboardButton(text="📷 Фото объекта")],
+        [KeyboardButton(text="🚀 Хочу предложить клиента")],
         [KeyboardButton(text="📩 Оставить заявку")],
         [KeyboardButton(text="❓ Задать вопрос")],
     ]
@@ -79,6 +83,21 @@ async def send_contact_form(msg: Message):
     )
     await bot.send_message(chat_id=os.getenv("TG_CHAT_ID"), text=text)
     await msg.answer("✅ Заявка отправлена! Мы скоро с вами свяжемся.")
+
+@router_polling.message(F.text == "🚀 Хочу предложить клиента")
+async def handle_offer_client(msg: Message):
+    logger.info(f"🚀 Заявка от агента {msg.from_user.id}")
+    full_name = msg.from_user.full_name
+    user_id = msg.from_user.id
+    text = (
+        f"🚀 Новая заявка от агента:\n\n"
+        f"👤 Имя: {full_name}\n"
+        f"🆔 Telegram ID: {user_id}\n"
+        f"📨 Username: @{msg.from_user.username or 'нет'}\n\n"
+        f"⚠️ Проверьте — агент хочет предложить клиента."
+    )
+    await bot.send_message(chat_id=os.getenv("TG_CHAT_ID"), text=text)
+    await msg.answer("✅ Спасибо! Мы на связи — скоро напишем.")
 
 @router_polling.message(F.text == "❓ Задать вопрос")
 async def ask_question_prompt(msg: Message):
