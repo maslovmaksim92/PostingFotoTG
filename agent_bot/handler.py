@@ -44,9 +44,9 @@ async def start_handler(msg: Message):
         reply_markup=main_kb
     )
 
-@router_polling.message(F.text == "📑 Получить КП")
+@router_polling.message(F.text == "📁 Получить КП")
 async def send_presentation(msg: Message):
-    logger.info(f"📑 Пользователь {msg.from_user.id} запросил презентацию")
+    logger.info(f"📁 Пользователь {msg.from_user.id} запросил презентацию")
     pdf_path = "agent_bot/templates/Presentation GAB Kaluga.pdf"
     await msg.answer("Вот презентация объекта:")
     await msg.answer_document(FSInputFile(pdf_path))
