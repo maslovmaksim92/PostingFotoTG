@@ -1,20 +1,12 @@
 import os
 import asyncio
-from aiogram import Bot, Dispatcher, Router, types
+from aiogram import Router, types
 from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.filters import Command
 from agent_bot.prompts import get_answer
 
-# === Настройка бота и диспетчера ===
-bot = Bot(
-    token=os.getenv("AGENT_BOT_TOKEN"),
-    default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
-)
-dp = Dispatcher()
-router = Router()
-dp.include_router(router)
+# === Отдельный router для polling ===
+router_polling = Router()
 
 # === Кнопки ===
 main_kb = ReplyKeyboardMarkup(
@@ -28,7 +20,7 @@ main_kb = ReplyKeyboardMarkup(
 
 # === Обработчики ===
 
-@router.message(Command("start"))
+@router_polling.message(commands=["start"])
 async def start_handler(msg: Message):
     await msg.answer(
         "Привет! Я бот по продаже объекта недвижимости в Калуге.\n\n"
@@ -39,13 +31,13 @@ async def start_handler(msg: Message):
         reply_markup=main_kb
     )
 
-@router.message(lambda m: m.text == "📑 Получить КП")
+@router_polling.message(lambda m: m.text == "📑 Получить КП")
 async def send_presentation(msg: Message):
     pdf_path = "agent_bot/templates/Presentation GAB Kaluga.pdf"
     await msg.answer("Вот презентация объекта:")
     await msg.answer_document(types.FSInputFile(pdf_path))
 
-@router.message(lambda m: m.text == "📷 Фото объекта")
+@router_polling.message(lambda m: m.text == "📷 Фото объекта")
 async def send_photos(msg: Message):
     folder = "agent_bot/templates/images"
     photos = []
@@ -58,16 +50,11 @@ async def send_photos(msg: Message):
     else:
         await msg.answer("📂 Фото не найдены.")
 
-@router.message(lambda m: m.text == "❓ Задать вопрос")
+@router_polling.message(lambda m: m.text == "❓ Задать вопрос")
 async def prompt_question(msg: Message):
     await msg.answer("🧠 Введите ваш вопрос, я постараюсь ответить.")
 
-@router.message()
+@router_polling.message()
 async def process_question(msg: Message):
     answer = await get_answer(msg.text)
     await msg.answer(answer)
-
-# === Запуск при старте FastAPI ===
-async def start_agent_bot():
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
