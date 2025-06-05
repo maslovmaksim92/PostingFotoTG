@@ -7,6 +7,7 @@ import os
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+
 from agent_bot.handler import router_polling
 
 # === Инициализация бота и диспетчера ===
@@ -22,5 +23,4 @@ app.include_router(webhook_router)
 @app.on_event("startup")
 async def startup():
     asyncio.create_task(dp.start_polling(bot))
-
-logger.info("✅ FastAPI приложение успешно стартовало")
+    logger.info("✅ FastAPI приложение успешно стартовало")
