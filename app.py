@@ -13,7 +13,6 @@ from agent_bot.handler import router_polling
 # === Инициализация бота и диспетчера ===
 bot = Bot(token=os.getenv("AGENT_BOT_TOKEN"), default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher()
-dp.include_router(router_polling)
 
 # === FastAPI приложение ===
 app = FastAPI()
@@ -22,5 +21,6 @@ app.include_router(webhook_router)
 # === Запуск polling при старте ===
 @app.on_event("startup")
 async def startup():
+    dp.include_router(router_polling)  # ✅ безопасно подключаем роутер один раз
     asyncio.create_task(dp.start_polling(bot))
     logger.info("✅ FastAPI приложение успешно стартовало")
