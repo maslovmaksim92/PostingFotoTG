@@ -1,24 +1,26 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from webhook import router as webhook_router
 from loguru import logger
-from agent_bot.handler import start_agent_bot
-from agent_bot.webhook import api_router as tg_webhook_router, on_startup as tg_webhook_startup
 import asyncio
+import os
 
-# 🟢 Создание FastAPI приложения
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from agent_bot.handler import router_polling
+
+# === Инициализация бота и диспетчера ===
+bot = Bot(token=os.getenv("AGENT_BOT_TOKEN"), default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
+dp = Dispatcher()
+dp.include_router(router_polling)
+
+# === FastAPI приложение ===
 app = FastAPI()
+app.include_router(webhook_router)
 
-# 🟢 Подключение роутеров
-app.include_router(webhook_router)        # Bitrix webhook
-app.include_router(tg_webhook_router)     # Telegram webhook
-
-# 🟢 Старт при запуске
+# === Запуск polling при старте ===
 @app.on_event("startup")
 async def startup():
-    # ✅ Старт Telegram webhook
-    await tg_webhook_startup()
-
-    # ⛔ Если хочешь использовать polling (например, в dev-среде) — раскомментируй:
-    # asyncio.create_task(start_agent_bot())
+    asyncio.create_task(dp.start_polling(bot))
 
 logger.info("✅ FastAPI приложение успешно стартовало")
