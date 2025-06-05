@@ -1,8 +1,9 @@
 import os
 import asyncio
-from aiogram import Router, types
+from aiogram import Router, F, types
 from aiogram.enums import ParseMode
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.filters import Command
 from agent_bot.prompts import get_answer
 
 # === Отдельный router для polling ===
@@ -15,12 +16,13 @@ main_kb = ReplyKeyboardMarkup(
         [KeyboardButton(text="📑 Получить КП")],
         [KeyboardButton(text="❓ Задать вопрос")],
         [KeyboardButton(text="📷 Фото объекта")],
+        [KeyboardButton(text="📬 Оставить заявку")],
     ]
 )
 
 # === Обработчики ===
 
-@router_polling.message(commands=["start"])
+@router_polling.message(Command("start"))
 async def start_handler(msg: Message):
     await msg.answer(
         "Привет! Я бот по продаже объекта недвижимости в Калуге.\n\n"
@@ -31,15 +33,15 @@ async def start_handler(msg: Message):
         reply_markup=main_kb
     )
 
-@router_polling.message(lambda m: m.text == "📑 Получить КП")
+@router_polling.message(F.text == "📑 Получить КП")
 async def send_presentation(msg: Message):
     pdf_path = "agent_bot/templates/Presentation GAB Kaluga.pdf"
     await msg.answer("Вот презентация объекта:")
     await msg.answer_document(types.FSInputFile(pdf_path))
 
-@router_polling.message(lambda m: m.text == "📷 Фото объекта")
+@router_polling.message(F.text == "📷 Фото объекта")
 async def send_photos(msg: Message):
-    folder = "agent_bot/templates/images"
+    folder = "agent_bot/images"
     photos = []
     for fname in os.listdir(folder):
         if fname.endswith((".jpg", ".png", ".jpeg")):
@@ -50,9 +52,14 @@ async def send_photos(msg: Message):
     else:
         await msg.answer("📂 Фото не найдены.")
 
-@router_polling.message(lambda m: m.text == "❓ Задать вопрос")
+@router_polling.message(F.text == "❓ Задать вопрос")
 async def prompt_question(msg: Message):
     await msg.answer("🧠 Введите ваш вопрос, я постараюсь ответить.")
+
+@router_polling.message(F.text == "📬 Оставить заявку")
+async def warn_about_form(msg: Message):
+    await msg.answer("✏️ Сейчас откроется форма. Пожалуйста, укажите свои данные…")
+    # Здесь форма обрабатывается через form.py (уже подключён как отдельный router)
 
 @router_polling.message()
 async def process_question(msg: Message):
