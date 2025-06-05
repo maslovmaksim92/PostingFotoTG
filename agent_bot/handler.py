@@ -14,7 +14,6 @@ bot = Bot(
 )
 dp = Dispatcher()
 router_polling = Router()
-dp.include_router(router_polling)
 
 # === Кнопки ===
 main_kb = ReplyKeyboardMarkup(
