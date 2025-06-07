@@ -1,4 +1,5 @@
 import os
+import random
 from aiogram import Bot, Dispatcher, Router, types, F
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -25,7 +26,6 @@ main_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📑 Получить КП")],
         [KeyboardButton(text="📷 Фото объекта")],
-        [KeyboardButton(text="📂 Документы")],
         [KeyboardButton(text="📝 Оставить заявку")],
     ]
 )
@@ -89,29 +89,6 @@ async def send_photos(msg: Message):
 
     for i in range(0, len(photos), 10):
         await msg.answer_media_group(photos[i:i+10])
-
-@router_polling.message(F.text == "📂 Документы")
-async def send_documents(msg: Message):
-    logger.info(f"📂 Пользователь {msg.from_user.id} запросил документы")
-    docs = sorted(Path("agent_bot/templates").glob("*.pdf"))
-
-    doc_titles = {
-        "Presentation GAB Kaluga.pdf": "📊 Коммерческое предложение",
-        "egrn.pdf": "📄 Выписка из ЕГРН",
-        "resume.pdf": "📋 Резюме объекта",
-        "svod_pravil_308.pdf": "📘 Свод правил",
-        "tex_plan.pdf": "📐 Технический план",
-        "otchet.pdf": "📊 Отчет о рыночной стоимости"
-    }
-
-    if not docs:
-        await msg.answer("❌ Документы не найдены.")
-        return
-
-    for doc in docs:
-        name = doc.name
-        caption = doc_titles.get(name, f"📄 Документ: {name}")
-        await msg.answer_document(FSInputFile(doc), caption=caption)
 
 @router_polling.message(F.text == "📝 Оставить заявку")
 async def start_application(msg: Message):
