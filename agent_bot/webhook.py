@@ -25,6 +25,7 @@ async def telegram_webhook(request: Request):
     await dp.feed_update(bot, update)
     return {"ok": True}
 
+@dp.startup()
 async def on_startup():
-    webhook_url = os.getenv("AGENT_WEBHOOK_URL")  # Полный URL типа https://xxx.onrender.com/webhook/agent
+    webhook_url = os.getenv("AGENT_WEBHOOK_URL")  # Пример: https://xxx.onrender.com/webhook/agent
     await bot.set_webhook(url=webhook_url, drop_pending_updates=True)
