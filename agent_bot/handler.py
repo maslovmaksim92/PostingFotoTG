@@ -58,10 +58,15 @@ async def send_photos(msg: Message):
         if fname.lower().endswith((".jpg", ".png", ".jpeg")):
             file_path = os.path.join(folder, fname)
             photos.append(InputMediaPhoto(media=FSInputFile(file_path)))
-    if photos:
-        await msg.answer_media_group(photos[:20])
-    else:
+
+    if not photos:
         await msg.answer("📂 Фото не найдены.")
+        return
+
+    # ⚠️ отправка партиями по 10
+    for i in range(0, len(photos), 10):
+        await msg.answer_media_group(photos[i:i+10])
+
 
 @router_polling.message(F.text == "📂 Документы")
 async def send_documents(msg: Message):
