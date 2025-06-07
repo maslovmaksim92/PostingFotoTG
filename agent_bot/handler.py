@@ -20,9 +20,7 @@ main_kb = ReplyKeyboardMarkup(
         [KeyboardButton(text="📑 Получить КП")],
         [KeyboardButton(text="📷 Фото объекта")],
         [KeyboardButton(text="📂 Документы")],
-        [KeyboardButton(text="📩 Оставить заявку")],
-        [KeyboardButton(text="🚀 Хочу предложить клиента")],
-        [KeyboardButton(text="❓ Задать вопрос")],
+        [KeyboardButton(text="📝 Оставить заявку")],
     ]
 )
 
@@ -93,41 +91,10 @@ async def send_documents(msg: Message):
     for doc in docs:
         await msg.answer_document(FSInputFile(doc))
 
-@router_polling.message(F.text == "📩 Оставить заявку")
-async def send_contact_form(msg: Message):
-    logger.info(f"📩 Заявка от {msg.from_user.id}")
-    full_name = msg.from_user.full_name
-    user_id = msg.from_user.id
-    text = (
-        f"📥 Новая заявка от пользователя:\n\n"
-        f"👤 Имя: {full_name}\n"
-        f"🆔 Telegram ID: {user_id}\n"
-        f"📨 Username: @{msg.from_user.username or 'нет'}\n\n"
-        f"📝 Напишите, что вы хотите, и мы свяжемся с вами!"
-    )
-    await bot.send_message(chat_id=os.getenv("TG_CHAT_ID"), text=text)
-    await msg.answer("✅ Заявка отправлена! Мы скоро с вами свяжемся.")
-
-@router_polling.message(F.text == "🚀 Хочу предложить клиента")
-async def send_agent_form(msg: Message):
-    logger.info(f"🚀 Агент/партнёр {msg.from_user.id} хочет предложить клиента")
-    full_name = msg.from_user.full_name
-    user_id = msg.from_user.id
-    text = (
-        f"🚀 Партнёр хочет предложить клиента:\n\n"
-        f"👤 Имя: {full_name}\n"
-        f"🆔 Telegram ID: {user_id}\n"
-        f"📨 Username: @{msg.from_user.username or 'нет'}\n\n"
-        f"📣 Проверь, есть ли у тебя прямой клиент. Мы работаем быстро, без воды. "
-        f"Если это ты — напиши нам прямо сейчас."
-    )
-    await bot.send_message(chat_id=os.getenv("TG_CHAT_ID"), text=text)
-    await msg.answer("✅ Принято! Мы свяжемся, если клиент интересен.")
-
-@router_polling.message(F.text == "❓ Задать вопрос")
-async def ask_question_prompt(msg: Message):
-    logger.info(f"❓ Подсказка от бота для вопроса от {msg.from_user.id}")
-    await msg.answer("🧠 Введите ваш вопрос — я постараюсь ответить.")
+@router_polling.message(F.text == "📝 Оставить заявку")
+async def empty_request_form(msg: Message):
+    logger.info(f"📝 Пользователь {msg.from_user.id} нажал 'Оставить заявку'")
+    await msg.answer("📝 Форма заявки пока в разработке. Оставьте сообщение ниже или напишите менеджеру.")
 
 @router_polling.message(F.text)
 async def process_question(msg: Message):
