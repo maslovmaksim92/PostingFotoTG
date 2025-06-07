@@ -25,11 +25,12 @@ main_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📑 Получить КП")],
         [KeyboardButton(text="📷 Фото объекта")],
+        [KeyboardButton(text="📂 Документы")],
         [KeyboardButton(text="📝 Оставить заявку")],
     ]
 )
 
-user_states = {}  # Состояния для заявок
+user_states = {}
 
 @router_polling.message(F.text.lower() == "/start")
 async def start_handler(msg: Message):
@@ -37,9 +38,9 @@ async def start_handler(msg: Message):
     await msg.answer(
         "Привет! Я бот по продаже объекта недвижимости в Калуге.\n\n"
         "🏢 *Гостиница 1089 м² + земля 815 м²*\n"
-        "💰 *Цена*: 56 млн ₽ (возможен торг)\n"
+        "💰 *Цена*: 56 млн ₽ *(возможен торг)*\n"
         "📍 *Адрес*: Калуга, пер. Сельский, 8а\n\n"
-        "Выберите действие:",
+        "Выберите действие ниже, или *задайте вопрос* — я отвечу на всё, что связано с объектом, документами, арендой, сделкой и условиями. 😉",
         reply_markup=main_kb
     )
 
@@ -53,14 +54,15 @@ async def send_presentation(msg: Message):
         "egrn.pdf": "📄 Выписка из ЕГРН",
         "resume.pdf": "📋 Резюме объекта",
         "svod_pravil_308.pdf": "📘 Свод правил",
-        "tex_plan.pdf": "📐 Технический план"
+        "tex_plan.pdf": "📐 Технический план",
+        "otchet.pdf": "📊 Отчет о рыночной стоимости"
     }
 
     if not docs:
         await msg.answer("❌ Документы не найдены.")
         return
 
-    await msg.answer("📎 Отправляю все документы по объекту:")
+    await msg.answer("📎 Отправляю все доступные документы по объекту:")
 
     for doc in docs:
         name = doc.name
@@ -88,7 +90,28 @@ async def send_photos(msg: Message):
     for i in range(0, len(photos), 10):
         await msg.answer_media_group(photos[i:i+10])
 
+@router_polling.message(F.text == "📂 Документы")
+async def send_documents(msg: Message):
+    logger.info(f"📂 Пользователь {msg.from_user.id} запросил документы")
+    docs = sorted(Path("agent_bot/templates").glob("*.pdf"))
 
+    doc_titles = {
+        "Presentation GAB Kaluga.pdf": "📊 Коммерческое предложение",
+        "egrn.pdf": "📄 Выписка из ЕГРН",
+        "resume.pdf": "📋 Резюме объекта",
+        "svod_pravil_308.pdf": "📘 Свод правил",
+        "tex_plan.pdf": "📐 Технический план",
+        "otchet.pdf": "📊 Отчет о рыночной стоимости"
+    }
+
+    if not docs:
+        await msg.answer("❌ Документы не найдены.")
+        return
+
+    for doc in docs:
+        name = doc.name
+        caption = doc_titles.get(name, f"📄 Документ: {name}")
+        await msg.answer_document(FSInputFile(doc), caption=caption)
 
 @router_polling.message(F.text == "📝 Оставить заявку")
 async def start_application(msg: Message):
@@ -100,7 +123,7 @@ async def start_application(msg: Message):
 async def process_form_or_question(msg: Message):
     user_id = msg.from_user.id
 
-    # Пользователь в процессе заявки
+    # Обработка заявки
     if user_id in user_states:
         state = user_states[user_id]
 
@@ -127,7 +150,11 @@ async def process_form_or_question(msg: Message):
             user_states.pop(user_id, None)
             return
 
-    # Обработка вопроса
-    logger.info(f"🧠 Вопрос от {user_id}: {msg.text}")
+    # GPT — свободная форма общения
+    if not msg.text:
+        await msg.answer("⚠️ Пожалуйста, введите текст.")
+        return
+
+    logger.info(f"🧠 Вопрос от {msg.from_user.id}: {msg.text}")
     answer = await get_answer(msg.text, user_id=user_id)
     await msg.answer(answer)
