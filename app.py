@@ -10,17 +10,29 @@ from aiogram.enums import ParseMode
 
 from agent_bot.handler import router_polling
 
+# === Проверка токена ===
+token = os.getenv("AGENT_BOT_TOKEN")
+if not token:
+    raise RuntimeError("❌ AGENT_BOT_TOKEN не найден в .env")
+
 # === Инициализация бота и диспетчера ===
-bot = Bot(token=os.getenv("AGENT_BOT_TOKEN"), default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
+bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher()
 
-# === FastAPI приложение ===
+# === FastAPI-приложение ===
 app = FastAPI()
 app.include_router(webhook_router)
 
-# === Запуск polling при старте ===
+# === Флаг для защиты от повторного запуска polling ===
+polling_started = False
+
 @app.on_event("startup")
 async def startup():
-    dp.include_router(router_polling)  # ✅ безопасно подключаем роутер один раз
-    asyncio.create_task(dp.start_polling(bot))
-    logger.info("✅ FastAPI приложение успешно стартовало")
+    global polling_started
+    if not polling_started:
+        dp.include_router(router_polling)
+        asyncio.create_task(dp.start_polling(bot))
+        polling_started = True
+        logger.info("✅ FastAPI приложение успешно стартовало и polling запущен")
+    else:
+        logger.warning("⚠️ Polling уже был запущен — повторный запуск отменён")
