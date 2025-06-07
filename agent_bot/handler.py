@@ -3,6 +3,8 @@ from aiogram import Bot, Dispatcher, Router, types, F
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputFile, InputMediaPhoto
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 from agent_bot.prompts import get_answer
 from loguru import logger
 from pathlib import Path
@@ -23,6 +25,9 @@ main_kb = ReplyKeyboardMarkup(
         [KeyboardButton(text="📝 Оставить заявку")],
     ]
 )
+
+class Form(StatesGroup):
+    waiting_for_contact = State()
 
 @router_polling.message(F.text.lower() == "/start")
 async def start_handler(msg: Message):
@@ -92,9 +97,24 @@ async def send_documents(msg: Message):
         await msg.answer_document(FSInputFile(doc))
 
 @router_polling.message(F.text == "📝 Оставить заявку")
-async def empty_request_form(msg: Message):
-    logger.info(f"📝 Пользователь {msg.from_user.id} нажал 'Оставить заявку'")
-    await msg.answer("📝 Форма заявки пока в разработке. Оставьте сообщение ниже или напишите менеджеру.")
+async def start_request_form(msg: Message, state: FSMContext):
+    logger.info(f"📝 Пользователь {msg.from_user.id} начал заявку")
+    await msg.answer("📞 Введите ваше имя и номер телефона:")
+    await state.set_state(Form.waiting_for_contact)
+
+@router_polling.message(Form.waiting_for_contact)
+async def process_contact(msg: Message, state: FSMContext):
+    user = msg.from_user
+    contact_info = (
+        f"📥 Новая заявка:\n\n"
+        f"👤 Имя и телефон: {msg.text}\n"
+        f"🆔 Telegram ID: {user.id}\n"
+        f"📨 Username: @{user.username or 'нет'}"
+    )
+
+    await bot.send_message(chat_id=os.getenv("TG_CHAT_LEAD"), text=contact_info)
+    await msg.answer("✅ Спасибо! Мы свяжемся с вами в ближайшее время.")
+    await state.clear()
 
 @router_polling.message(F.text)
 async def process_question(msg: Message):
@@ -102,5 +122,5 @@ async def process_question(msg: Message):
         await msg.answer("⚠️ Пожалуйста, введите текст.")
         return
     logger.info(f"🧠 Вопрос от {msg.from_user.id}: {msg.text}")
-    answer = await get_answer(msg.text)
+    answer = await get_answer(msg.text, msg.from_user.id)
     await msg.answer(answer)
